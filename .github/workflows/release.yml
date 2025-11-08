@@ -2,8 +2,8 @@ name: release
 
 on:
   push:
-    branches:
-      - '**'
+    tags:
+      - '*'
 
 jobs:
   build-and-release:
@@ -27,8 +27,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: release-${{ github.sha }}
-          name: Release ${{ github.sha }}
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
           files: |
             dist/boss-windows-amd64.zip
             dist/boss-macos-arm64.zip
