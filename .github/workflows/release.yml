@@ -1,0 +1,37 @@
+name: release
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Package binaries
+        run: scripts/package.sh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: release-${{ github.sha }}
+          name: Release ${{ github.sha }}
+          files: |
+            dist/boss-windows-amd64.zip
+            dist/boss-macos-arm64.zip
+            dist/boss-linux-amd64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,777 @@
+package boss
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"net/url"
+	"os"
+	"sort"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/playwright-community/playwright-go"
+
+	"get_jobs/internal/ai"
+	"get_jobs/internal/bot"
+	"get_jobs/internal/config"
+	"get_jobs/internal/play"
+	"get_jobs/internal/utils"
+)
+
+const (
+	homeURL    = "https://www.zhipin.com"
+	baseURL    = "https://www.zhipin.com/web/geek/job"
+	dataPath   = "data/boss/data.json"
+	cookiePath = "data/boss/cookie.json"
+)
+
+// App is the Go port of the original Java Boss logic.
+type App struct {
+	cfg    *config.BossConfig
+	aiCfg  config.AiConfig
+	bot    *bot.Client
+	ai     *ai.Client
+	runner *play.Runner
+	black  *Blacklists
+
+	results    []Job
+	startTime  time.Time
+	dataFile   string
+	cookieFile string
+}
+
+// NewApp wires all dependencies together.
+func NewApp(cfg *config.Root, env config.Env) (*App, error) {
+	runner, err := play.NewRunner()
+	if err != nil {
+		return nil, err
+	}
+
+	dataFile := config.ResolvePath(dataPath)
+	cookieFile := config.ResolvePath(cookiePath)
+
+	if err := utils.EnsureFile(dataFile, []byte(`{"blackCompanies":[],"blackRecruiters":[],"blackJobs":[]}`)); err != nil {
+		runner.Close()
+		return nil, err
+	}
+	if err := utils.EnsureFile(cookieFile, []byte("[]")); err != nil {
+		runner.Close()
+		return nil, err
+	}
+
+	black, err := loadBlacklists(dataFile)
+	if err != nil {
+		runner.Close()
+		return nil, err
+	}
+
+	app := &App{
+		cfg:        &cfg.Boss,
+		aiCfg:      cfg.AI,
+		bot:        bot.New(cfg.Bot, env),
+		ai:         ai.New(env),
+		runner:     runner,
+		black:      black,
+		dataFile:   dataFile,
+		cookieFile: cookieFile,
+	}
+	return app, nil
+}
+
+func (a *App) Close() {
+	if a == nil {
+		return
+	}
+	if a.runner != nil && !a.cfg.Debugger {
+		a.runner.Close()
+	}
+}
+
+// Run executes the Boss投递流程。
+func (a *App) Run() error {
+	a.startTime = time.Now()
+	page := a.runner.Page()
+
+	if err := a.login(page); err != nil {
+		return err
+	}
+
+	for _, city := range a.cfg.CityCode {
+		if err := a.postJobByCity(page, city); err != nil {
+			log.Printf("[boss] 城市 %s 投递失败: %v", city, err)
+		}
+	}
+
+	if len(a.results) == 0 {
+		log.Println("[boss] 未发起新的聊天…")
+	} else {
+		log.Println("[boss] 新发起聊天公司如下:")
+		for _, job := range a.results {
+			log.Println(job.String())
+		}
+	}
+
+	if !a.cfg.Debugger {
+		a.printResult()
+	}
+	return nil
+}
+
+func (a *App) printResult() {
+	msg := fmt.Sprintf("\nBoss投递完成，共发起%d个聊天，用时%s", len(a.results), utils.FormatDuration(a.startTime, time.Now()))
+	log.Println(msg)
+	if a.bot != nil {
+		a.bot.SendWithTime(msg)
+	}
+	if err := a.saveData(); err != nil {
+		log.Printf("[boss] 保存黑名单失败: %v", err)
+	}
+	a.results = nil
+	if !a.cfg.Debugger {
+		a.runner.Close()
+	}
+	time.Sleep(1 * time.Second)
+}
+
+func (a *App) saveData() error {
+	if err := a.updateListData(); err != nil {
+		log.Printf("[boss] 更新黑名单失败: %v", err)
+	}
+	payload := struct {
+		BlackCompanies  []string `json:"blackCompanies"`
+		BlackRecruiters []string `json:"blackRecruiters"`
+		BlackJobs       []string `json:"blackJobs"`
+	}{
+		BlackCompanies:  setToSlice(a.black.Companies),
+		BlackRecruiters: setToSlice(a.black.Recruiters),
+		BlackJobs:       setToSlice(a.black.Jobs),
+	}
+
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(a.dataFile, data, 0o644)
+}
+
+func setToSlice(set map[string]struct{}) []string {
+	list := make([]string, 0, len(set))
+	for k := range set {
+		list = append(list, k)
+	}
+	sort.Strings(list)
+	return list
+}
+
+func loadBlacklists(path string) (*Blacklists, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		BlackCompanies  []string `json:"blackCompanies"`
+		BlackRecruiters []string `json:"blackRecruiters"`
+		BlackJobs       []string `json:"blackJobs"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, err
+	}
+	bl := newBlacklists()
+	for _, v := range payload.BlackCompanies {
+		addToSet(bl.Companies, v)
+	}
+	for _, v := range payload.BlackRecruiters {
+		addToSet(bl.Recruiters, v)
+	}
+	for _, v := range payload.BlackJobs {
+		addToSet(bl.Jobs, v)
+	}
+	return bl, nil
+}
+
+func (a *App) buildSearchURL(city string) string {
+	qs := url.Values{}
+	addParam := func(key, value string) {
+		if value != "" && value != config.UnlimitedCode {
+			qs.Set(key, value)
+		}
+	}
+	addList := func(key string, values []string) {
+		if len(values) == 0 {
+			return
+		}
+		if len(values) == 1 && values[0] == config.UnlimitedCode {
+			return
+		}
+		qs.Set(key, strings.Join(values, ","))
+	}
+
+	addParam("city", city)
+	addParam("jobType", a.cfg.JobType)
+	addParam("salary", a.cfg.Salary)
+	addList("experience", a.cfg.Experience)
+	addList("degree", a.cfg.Degree)
+	addList("scale", a.cfg.Scale)
+	addList("industry", a.cfg.Industry)
+	addList("stage", a.cfg.Stage)
+
+	encoded := qs.Encode()
+	if encoded == "" {
+		return baseURL
+	}
+	return fmt.Sprintf("%s?%s", baseURL, encoded)
+}
+
+// TODO: the remaining browser automation logic (login, postJobByCity, resumeSubmission, etc.)
+// will be implemented in the next iteration to achieve feature parity with the Java version.
+
+func (a *App) login(page playwright.Page) error {
+	log.Println("[boss] 打开Boss直聘网站中…")
+	if _, err := page.Goto(homeURL); err != nil {
+		return fmt.Errorf("访问主页失败: %w", err)
+	}
+	play.Sleep(1)
+	if err := a.waitForSlider(page); err != nil {
+		return err
+	}
+
+	if play.CookieFileExists(a.cookieFile) {
+		if err := a.runner.LoadCookies(a.cookieFile); err != nil {
+			log.Printf("[boss] 加载cookie失败: %v", err)
+		} else {
+			if _, err := page.Reload(); err != nil {
+				return fmt.Errorf("刷新页面失败: %w", err)
+			}
+			play.Sleep(1)
+			if err := a.waitForSlider(page); err != nil {
+				return err
+			}
+			a.runner.InitStealth()
+		}
+	}
+
+	required, err := a.isLoginRequired(page)
+	if err != nil {
+		return err
+	}
+	if required {
+		log.Println("[boss] cookie失效，尝试扫码登录…")
+		if err := a.scanLogin(page); err != nil {
+			return err
+		}
+		if err := a.runner.SaveCookies(a.cookieFile); err != nil {
+			log.Printf("[boss] 保存cookie失败: %v", err)
+		}
+	}
+	return nil
+}
+
+func (a *App) postJobByCity(page playwright.Page, city string) error {
+	searchURL := a.buildSearchURL(city)
+	for _, keyword := range a.cfg.Keywords {
+		encoded := url.QueryEscape(keyword)
+		target := fmt.Sprintf("%s&query=%s", searchURL, encoded)
+		log.Printf("[boss] 投递地址:%s", searchURL+"&query="+keyword)
+		if _, err := page.Goto(target); err != nil {
+			return fmt.Errorf("打开搜索页失败: %w", err)
+		}
+		if err := page.Locator(jobListContainer).WaitFor(); err != nil {
+			log.Printf("[boss] 等待岗位列表失败: %v", err)
+		}
+
+		cards := page.Locator(jobCardSelector)
+		lastCount := -1
+		for {
+			if _, err := page.Evaluate("() => window.scrollTo(0, document.body.scrollHeight)", nil); err != nil {
+				return err
+			}
+			play.Sleep(1)
+			count, err := cards.Count()
+			if err != nil {
+				return err
+			}
+			if count == lastCount {
+				break
+			}
+			lastCount = count
+		}
+		log.Printf("[boss] 【%s】岗位已全部加载，总数:%d", keyword, lastCount)
+		_, _ = page.Evaluate("() => window.scrollTo(0, 0)", nil)
+		play.Sleep(1)
+
+		count, err := cards.Count()
+		if err != nil {
+			return err
+		}
+		postCount := 0
+		for i := 0; i < count; i++ {
+			cards = page.Locator(jobCardSelector)
+			if err := cards.Nth(i).Click(); err != nil {
+				log.Printf("[boss] 点击岗位卡片失败: %v", err)
+				continue
+			}
+			play.Sleep(1)
+
+			detail := page.Locator(jobDetailBox)
+			if err := detail.WaitFor(playwright.LocatorWaitForOptions{Timeout: playwright.Float(4000)}); err != nil {
+				continue
+			}
+			detail = detail.Nth(0)
+
+			jobName := safeText(detail, jobNameSelector)
+			if jobName == "" || a.black.JobBlocked(jobName) {
+				continue
+			}
+			salary := decodeSalary(safeText(detail, jobSalarySelector))
+			tags := safeAllText(detail, jobTagSelector)
+			jobDesc := safeText(detail, jobDescSelector)
+			bossNameRaw := safeText(detail, bossNameSelector)
+			bossName, bossActive := splitBossName(bossNameRaw)
+			if a.cfg.FilterDeadHR && containsDeadStatus(bossActive, a.cfg.DeadStatus) {
+				continue
+			}
+			bossTitleRaw := safeText(detail, bossInfoSelector)
+			companyName, recruiterTitle := splitBossTitle(bossTitleRaw)
+			if a.black.CompanyBlocked(companyName) || a.black.RecruiterBlocked(recruiterTitle) {
+				continue
+			}
+
+			job := Job{
+				JobName:     jobName,
+				Salary:      salary,
+				JobArea:     strings.Join(tags, ", "),
+				JobInfo:     jobDesc,
+				CompanyName: companyName,
+				Recruiter:   bossName,
+			}
+
+			_, err := a.resumeSubmission(page, keyword, job)
+			if err != nil {
+				log.Printf("[boss] 投递岗位失败: %v", err)
+			}
+			postCount++
+		}
+		log.Printf("[boss] 【%s】岗位已投递完毕！已投递岗位数量:%d", keyword, postCount)
+	}
+	return nil
+}
+
+func (a *App) resumeSubmission(page playwright.Page, keyword string, job Job) (bool, error) {
+	play.Sleep(1)
+
+	moreBtn := page.Locator(moreJobButton)
+	if count, err := moreBtn.Count(); err != nil || count == 0 {
+		log.Printf("[boss] 未找到查看更多信息按钮，跳过岗位:%s", job.JobName)
+		return false, nil
+	}
+	href, err := moreBtn.Nth(0).GetAttribute("href")
+	if err != nil || !strings.HasPrefix(href, "/job_detail/") {
+		log.Printf("[boss] 未获取到岗位详情链接，跳过岗位:%s", job.JobName)
+		return false, nil
+	}
+	detailURL := homeURL + href
+
+	detailPage, err := page.Context().NewPage()
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		_ = detailPage.Close()
+		play.Sleep(1)
+	}()
+
+	if _, err := detailPage.Goto(detailURL); err != nil {
+		return false, err
+	}
+	play.Sleep(1)
+
+	chatBtn := detailPage.Locator("a.btn-startchat, a.op-btn-chat")
+	found := false
+	for i := 0; i < 5; i++ {
+		if count, err := chatBtn.Count(); err == nil && count > 0 {
+			text, _ := chatBtn.Nth(0).TextContent()
+			if strings.Contains(text, "立即沟通") {
+				found = true
+				break
+			}
+		}
+		play.Sleep(1)
+	}
+	if !found {
+		log.Printf("[boss] 未找到立即沟通按钮，跳过岗位:%s", job.JobName)
+		return false, nil
+	}
+	if err := chatBtn.Nth(0).Click(); err != nil {
+		return false, err
+	}
+	play.Sleep(1)
+
+	inputLocator := detailPage.Locator(chatInputSelector)
+	ready := false
+	for i := 0; i < 10; i++ {
+		if count, err := inputLocator.Count(); err == nil && count > 0 {
+			visible, _ := inputLocator.Nth(0).IsVisible()
+			if visible {
+				ready = true
+				break
+			}
+		}
+		play.Sleep(1)
+	}
+	if !ready {
+		log.Printf("[boss] 聊天输入框未出现，跳过岗位:%s", job.JobName)
+		return false, nil
+	}
+
+	message := strings.ReplaceAll(strings.ReplaceAll(a.cfg.SayHi, "\r", ""), "\n", "")
+	if a.cfg.EnableAI && a.ai != nil && job.JobInfo != "" {
+		if ok, aiMsg := a.checkJob(keyword, job.JobName, job.JobInfo); ok && aiMsg != "" {
+			message = aiMsg
+		}
+	}
+
+	input := inputLocator.Nth(0)
+	_ = input.Click()
+	tagNameRaw, _ := input.Evaluate("el => el.tagName", nil)
+	tagName, _ := tagNameRaw.(string)
+	if strings.EqualFold(tagName, "textarea") {
+		if err := input.Fill(message); err != nil {
+			return false, err
+		}
+	} else {
+		if _, err := input.Evaluate("(el, msg) => el.innerText = msg", message); err != nil {
+			return false, err
+		}
+	}
+
+	imgResume := false
+	if a.cfg.SendImgResume {
+		if resumePath := resolveResumePath(); resumePath != "" {
+			uploader := detailPage.Locator(imageUploadSelector)
+			if count, err := uploader.Count(); err == nil && count > 0 {
+				if err := uploader.Nth(0).SetInputFiles(resumePath); err == nil {
+					imgResume = true
+				}
+			}
+		}
+	}
+
+	sendBtn := detailPage.Locator(sendButtonSelector)
+	sendSuccess := false
+	if count, err := sendBtn.Count(); err == nil && count > 0 {
+		if err := sendBtn.Nth(0).Click(); err == nil {
+			play.Sleep(1)
+			sendSuccess = true
+		}
+	}
+	if !sendSuccess {
+		log.Printf("[boss] 未找到发送按钮，自动跳过！岗位：%s", job.JobName)
+	}
+	log.Printf("[boss] 投递完成 | 岗位：%s | 招呼语：%s | 图片简历：%s", job.JobName, message, map[bool]string{true: "已发送", false: "未发送"}[imgResume])
+
+	if sendSuccess {
+		a.results = append(a.results, job)
+	}
+	return sendSuccess, nil
+}
+
+func (a *App) updateListData() error {
+	page := a.runner.Page()
+	if _, err := page.Goto("https://www.zhipin.com/web/geek/chat"); err != nil {
+		return err
+	}
+	play.Sleep(3)
+
+	for {
+		finished := page.Locator(finishedText)
+		if count, err := finished.Count(); err == nil && count > 0 {
+			text, _ := finished.Nth(0).TextContent()
+			if strings.TrimSpace(text) == "没有更多了" {
+				break
+			}
+		}
+
+		companyLoc := page.Locator(companyNameInChat)
+		messageLoc := page.Locator(lastMessageInChat)
+
+		companyCount, err := companyLoc.Count()
+		if err != nil {
+			return err
+		}
+		messageCount, err := messageLoc.Count()
+		if err != nil {
+			return err
+		}
+		limit := companyCount
+		if messageCount < limit {
+			limit = messageCount
+		}
+
+		for i := 0; i < limit; i++ {
+			companyName, err := companyLoc.Nth(i).TextContent()
+			if err != nil {
+				continue
+			}
+			message, err := messageLoc.Nth(i).TextContent()
+			if err != nil {
+				continue
+			}
+			companyName = strings.ReplaceAll(strings.TrimSpace(companyName), "...", "")
+			message = strings.TrimSpace(message)
+			if companyName == "" || message == "" {
+				continue
+			}
+			if shouldBlacklistMessage(message) && !a.black.CompanyBlocked(companyName) && validCompanyName(companyName) {
+				a.black.AddCompany(companyName)
+				log.Printf("[boss] 黑名单公司：【%s】，信息：【%s】", companyName, message)
+			}
+		}
+
+		scroll := page.Locator(scrollLoadMore)
+		if count, err := scroll.Count(); err == nil && count > 0 {
+			_ = scroll.Nth(0).ScrollIntoViewIfNeeded()
+		} else {
+			_, _ = page.Evaluate("() => window.scrollTo(0, document.body.scrollHeight)", nil)
+		}
+	}
+
+	log.Printf("[boss] 黑名单公司数量：%d", len(a.black.Companies))
+	return nil
+}
+
+func (a *App) waitForSlider(page playwright.Page) error {
+	const sliderURL = "https://www.zhipin.com/web/user/safe/verify-slider"
+	deadline := time.Now().Add(5 * time.Minute)
+	for time.Now().Before(deadline) {
+		if strings.HasPrefix(page.URL(), sliderURL) {
+			fmt.Println("\n【滑块验证】请手动完成Boss直聘滑块验证，通过后在控制台回车继续…")
+			_, _ = fmt.Scanln()
+			play.Sleep(1)
+			continue
+		}
+		return nil
+	}
+	return errors.New("滑块验证超时")
+}
+
+func (a *App) isLoginRequired(page playwright.Page) (bool, error) {
+	locator := page.Locator(loginButtons)
+	if count, err := locator.Count(); err == nil && count > 0 {
+		text, err := locator.TextContent()
+		if err == nil && strings.Contains(text, "登录") {
+			return true, nil
+		}
+		return false, nil
+	}
+
+	header := page.Locator(pageHeader)
+	if err := header.WaitFor(); err == nil {
+		errorLogin := page.Locator(errorPageLogin)
+		if count, err := errorLogin.Count(); err == nil && count > 0 {
+			_ = errorLogin.Click()
+			return true, nil
+		}
+	}
+	log.Println("[boss] cookie有效，已登录…")
+	return false, nil
+}
+
+func (a *App) scanLogin(page playwright.Page) error {
+	if _, err := page.Goto(homeURL + "/web/user/?ka=header-login"); err != nil {
+		return fmt.Errorf("进入登录页失败: %w", err)
+	}
+	play.Sleep(1)
+
+	loginBtn := page.Locator(loginBtn)
+	if count, err := loginBtn.Count(); err == nil && count > 0 {
+		if text, err := loginBtn.TextContent(); err == nil && text != "登录" {
+			log.Println("[boss] 已经登录，直接开始投递…")
+			return nil
+		}
+	}
+
+	log.Println("[boss] 等待登录…")
+	if err := page.Locator(loginScanSwitch).Click(); err != nil {
+		return fmt.Errorf("点击二维码登录按钮失败: %w", err)
+	}
+
+	start := time.Now()
+	timeout := 10 * time.Minute
+	for {
+		if time.Since(start) >= timeout {
+			return errors.New("超过10分钟未完成登录，程序退出")
+		}
+		locator := page.Locator(jobListContainer)
+		if count, err := locator.Count(); err == nil && count > 0 {
+			visible, _ := locator.First().IsVisible()
+			if visible {
+				log.Println("[boss] 用户已登录！")
+				return nil
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func safeText(root playwright.Locator, selector string) string {
+	if root == nil {
+		return ""
+	}
+	node := root.Locator(selector)
+	count, err := node.Count()
+	if err != nil || count == 0 {
+		return ""
+	}
+	text, err := node.Nth(0).InnerText()
+	if err != nil {
+		text, err = node.Nth(0).TextContent()
+		if err != nil {
+			return ""
+		}
+	}
+	return strings.TrimSpace(text)
+}
+
+func safeAllText(root playwright.Locator, selector string) []string {
+	if root == nil {
+		return nil
+	}
+	result, err := root.Locator(selector).AllInnerTexts()
+	if err != nil {
+		return nil
+	}
+	for i := range result {
+		result[i] = strings.TrimSpace(result[i])
+	}
+	return result
+}
+
+func splitBossName(raw string) (string, string) {
+	parts := strings.Fields(strings.TrimSpace(raw))
+	if len(parts) == 0 {
+		return "", ""
+	}
+	if len(parts) == 1 {
+		return parts[0], ""
+	}
+	return parts[0], strings.Join(parts[1:], " ")
+}
+
+func splitBossTitle(raw string) (string, string) {
+	parts := strings.Split(strings.TrimSpace(raw), " · ")
+	if len(parts) == 0 {
+		return "", ""
+	}
+	if len(parts) == 1 {
+		return parts[0], ""
+	}
+	return parts[0], parts[1]
+}
+
+func decodeSalary(text string) string {
+	mapping := map[rune]rune{
+		'': '0', '': '1', '': '2', '': '3', '': '4',
+		'': '5', '': '6', '': '7', '': '8', '': '9',
+	}
+	var b strings.Builder
+	for _, r := range text {
+		if mapped, ok := mapping[r]; ok {
+			b.WriteRune(mapped)
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func resolveResumePath() string {
+	candidates := []string{
+		"assets/resume.jpg",
+		"resume.jpg",
+		"src/main/resources/resume.jpg",
+	}
+	for _, path := range candidates {
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return ""
+}
+
+func (a *App) checkJob(keyword, jobName, jd string) (bool, string) {
+	if a.ai == nil || !a.ai.Enabled() {
+		return false, ""
+	}
+	prompt := fmt.Sprintf(a.aiCfg.Prompt, a.aiCfg.Introduce, keyword, jobName, jd, a.cfg.SayHi)
+	resp, err := a.ai.Chat(prompt)
+	if err != nil {
+		log.Printf("[boss] AI请求失败: %v", err)
+		return false, ""
+	}
+	if strings.Contains(strings.ToLower(resp), "false") {
+		return false, ""
+	}
+	return true, strings.TrimSpace(resp)
+}
+
+func containsDeadStatus(active string, statuses []string) bool {
+	for _, status := range statuses {
+		if status != "" && strings.Contains(active, status) {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldBlacklistMessage(message string) bool {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return false
+	}
+	matches := []string{"不", "感谢", "但", "遗憾", "需要本", "对不"}
+	excludes := []string{"不是", "不生"}
+	hasMatch := false
+	for _, word := range matches {
+		if strings.Contains(message, word) {
+			hasMatch = true
+			break
+		}
+	}
+	if !hasMatch {
+		return false
+	}
+	for _, word := range excludes {
+		if strings.Contains(message, word) {
+			return false
+		}
+	}
+	return true
+}
+
+func validCompanyName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	chineseCount := 0
+	letterCount := 0
+	for _, r := range name {
+		switch {
+		case unicode.Is(unicode.Han, r):
+			chineseCount++
+			if chineseCount >= 2 {
+				return true
+			}
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+			letterCount++
+			if letterCount >= 4 {
+				return true
+			}
+		}
+	}
+	return false
+}

@@ -3,6 +3,7 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 config.yaml
+!config_templates/config.yaml
 .git-rewrite
 ### IntelliJ IDEA ###
 *.iws
@@ -40,10 +41,16 @@ build/
 .vscode/
 data.json
 src/main/java/boss/data.json
+data/boss/data.json
+data/boss/cookie.json
+!data/boss/.gitkeep
 merge_prs.log
 ### Mac OS ###
 .DS_Store
 cookie.json
 .env
+!config_templates/.env
 chromedriver
 *.jpg
+build/
+dist/

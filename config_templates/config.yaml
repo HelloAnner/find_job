@@ -1,0 +1,48 @@
+boss:
+  debugger: false
+  sayHi: "您好,我有8年工作经验,还有AIGC大模型、Java,Python,Golang和运维的相关经验,希望应聘这个岗位,期待可以与您进一步沟通,谢谢！"
+  keywords: ["大模型", "Python", "Golang", "Java"]
+  industry: ["不限"]
+  cityCode: ["上海"]
+  experience: ["5-10年"]
+  jobType: "不限"
+  salary: "20-50K"
+  degree: ["不限"]
+  scale: ["不限"]
+  stage: ["不限"]
+  expectedSalary: [15, 25]
+  waitTime: 10
+  filterDeadHR: true
+  enableAI: true
+  sendImgResume: false
+  deadStatus: ["2周内活跃", "本月活跃", "2月内活跃", "半年前活跃"]
+
+job51:
+  jobArea: ["上海"]
+  keywords: ["java", "python", "go", "golang", "大模型", "软件工程师"]
+  salary: ["不限"]
+
+lagou:
+  keywords: ["AI工程师", "Java", "Golang", "Python"]
+  cityCode: "上海"
+  salary: "不限"
+  scale: ["不限"]
+  gj: "在校/应届,3年及以下"
+
+liepin:
+  cityCode: "上海"
+  keywords: ["Java", "Python", "Golang", "大模型"]
+  salary: "15$30"
+  pubTime: "30"
+
+zhilian:
+  cityCode: "上海"
+  salary: "25001,35000"
+  keywords: ["AI", "Java", "Python", "Golang"]
+
+ai:
+  introduce: "我熟练使用Java Python Golang语言进行开发..."
+  prompt: "我目前在找工作,%s,..."
+
+bot:
+  is_send: true
