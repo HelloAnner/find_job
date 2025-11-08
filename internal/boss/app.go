@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -278,10 +279,10 @@ func (a *App) buildSearchURL(city string) string {
 
 func (a *App) login(page playwright.Page) error {
 	log.Println("[boss] 打开Boss直聘网站中…")
-	if _, err := page.Goto(homeURL); err != nil {
-		return fmt.Errorf("访问主页失败: %w", err)
-	}
-	play.Sleep(1)
+if _, err := page.Goto(homeURL); err != nil {
+	return fmt.Errorf("访问主页失败: %w", err)
+}
+sleepRandom(800, 1500)
 	if err := a.waitForSlider(page); err != nil {
 		return err
 	}
@@ -293,7 +294,7 @@ func (a *App) login(page playwright.Page) error {
 			if _, err := page.Reload(); err != nil {
 				return fmt.Errorf("刷新页面失败: %w", err)
 			}
-			play.Sleep(1)
+			sleepRandom(600, 1200)
 			if err := a.waitForSlider(page); err != nil {
 				return err
 			}
@@ -340,7 +341,7 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 			if _, err := page.Evaluate("() => window.scrollTo(0, document.body.scrollHeight)", nil); err != nil {
 				return err
 			}
-			play.Sleep(1)
+			sleepRandom(700, 1500)
 			count, err := cards.Count()
 			if err != nil {
 				return err
@@ -352,7 +353,7 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 		}
 		log.Printf("[boss] 【%s】岗位已全部加载，总数:%d", keyword, lastCount)
 		_, _ = page.Evaluate("() => window.scrollTo(0, 0)", nil)
-		play.Sleep(1)
+		sleepRandom(500, 1200)
 
 		count, err := cards.Count()
 		if err != nil {
@@ -369,7 +370,7 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 				log.Printf("[boss] 点击岗位卡片失败: %v", err)
 				continue
 			}
-			play.Sleep(1)
+			sleepRandom(500, 900)
 
 			detail := page.Locator(jobDetailBox)
 			if err := detail.WaitFor(playwright.LocatorWaitForOptions{Timeout: playwright.Float(4000)}); err != nil {
@@ -421,7 +422,7 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 }
 
 func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (bool, error) {
-	play.Sleep(1)
+	sleepRandom(500, 1000)
 
 	moreBtn := page.Locator(moreJobButton)
 	if count, err := moreBtn.Count(); err != nil || count == 0 {
@@ -442,13 +443,13 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	}
 	defer func() {
 		_ = detailPage.Close()
-		play.Sleep(1)
+		sleepRandom(500, 1000)
 	}()
 
 	if _, err := detailPage.Goto(detailURL); err != nil {
 		return false, err
 	}
-	play.Sleep(1)
+	sleepRandom(600, 1200)
 
 	chatBtn := detailPage.Locator("a.btn-startchat, a.op-btn-chat")
 	found := false
@@ -460,7 +461,7 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 				break
 			}
 		}
-		play.Sleep(1)
+		sleepRandom(500, 900)
 	}
 	if !found {
 		log.Printf("[boss] 未找到立即沟通按钮，跳过岗位:%s", job.JobName)
@@ -469,7 +470,7 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	if err := chatBtn.Nth(0).Click(); err != nil {
 		return false, err
 	}
-	play.Sleep(1)
+	sleepRandom(500, 900)
 
 	inputLocator := detailPage.Locator(chatInputSelector)
 	ready := false
@@ -481,7 +482,7 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 				break
 			}
 		}
-		play.Sleep(1)
+		sleepRandom(500, 900)
 	}
 	if !ready {
 		log.Printf("[boss] 聊天输入框未出现，跳过岗位:%s", job.JobName)
