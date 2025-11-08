@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -21,18 +22,53 @@ type Client struct {
 }
 
 func New(env config.Env) *Client {
-	base := strings.TrimSuffix(env.Get("BASE_URL"), "/")
+	base := strings.TrimSpace(env.Get("BASE_URL"))
 	apiKey := env.Get("API_KEY")
 	model := env.Get("MODEL")
-	if base == "" || apiKey == "" || model == "" {
+	if apiKey == "" || model == "" {
 		return nil
 	}
+
+	endpoint := strings.TrimSpace(env.Get("BASE_ENDPOINT"))
+	path := strings.TrimSpace(env.Get("BASE_PATH"))
+	endpoint = sanitizeEndpoint(base, path, endpoint)
+	if endpoint == "" {
+		return nil
+	}
+
 	return &Client{
-		baseURL: base + "/v1/chat/completions",
+		baseURL: endpoint,
 		apiKey:  apiKey,
 		model:   model,
 		client:  &http.Client{Timeout: 60 * time.Second},
 	}
+}
+
+func sanitizeEndpoint(base, path, endpoint string) string {
+	toURL := func(value string) string {
+		return strings.TrimRight(strings.TrimSpace(value), "/")
+	}
+
+	switch {
+	case endpoint != "":
+		return toURL(endpoint)
+	case strings.HasPrefix(strings.ToLower(path), "http://") || strings.HasPrefix(strings.ToLower(path), "https://"):
+		return toURL(path)
+	case path == "":
+		lowerBase := strings.ToLower(strings.TrimSpace(base))
+		if strings.HasSuffix(lowerBase, "/api/v3") || strings.HasSuffix(lowerBase, "/api/v4") || strings.Contains(lowerBase, "volces") {
+			path = "/chat/completions"
+		} else {
+			path = "/v1/chat/completions"
+		}
+	}
+
+	path = "/" + strings.TrimPrefix(path, "/")
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if base == "" {
+		return strings.TrimSpace(path)
+	}
+	return base + path
 }
 
 func (c *Client) Enabled() bool {
@@ -44,6 +80,7 @@ func (c *Client) Chat(prompt string) (string, error) {
 	if !c.Enabled() {
 		return "", fmt.Errorf("ai client not configured")
 	}
+	log.Printf("[ai] prompt=%s", truncateForLog(prompt))
 
 	payload := map[string]any{
 		"model":       c.model,
@@ -73,7 +110,8 @@ func (c *Client) Chat(prompt string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("ai request returned status %d", resp.StatusCode)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("ai request returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 	}
 
 	var data chatResponse
@@ -85,6 +123,7 @@ func (c *Client) Chat(prompt string) (string, error) {
 	}
 	msg := data.Choices[0].Message.Content
 	log.Printf("[ai] request %s 使用模型 %s，tokens prompt=%d completion=%d total=%d", data.ID, data.Model, data.Usage.PromptTokens, data.Usage.CompletionTokens, data.Usage.TotalTokens)
+	log.Printf("[ai] response=%s", truncateForLog(msg))
 	return msg, nil
 }
 
@@ -101,4 +140,11 @@ type chatResponse struct {
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
 	} `json:"usage"`
+}
+
+func truncateForLog(content string) string {
+	if len(content) <= 200 {
+		return content
+	}
+	return content[:200] + "..."
 }

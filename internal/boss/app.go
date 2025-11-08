@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -41,10 +42,18 @@ type App struct {
 	startTime  time.Time
 	dataFile   string
 	cookieFile string
+	aiReady    chan error
+	aiOnce     sync.Once
+	aiReadyErr error
 }
 
 // NewApp wires all dependencies together.
 func NewApp(cfg *config.Root, env config.Env) (*App, error) {
+	aiClient := ai.New(env)
+	if cfg.Boss.EnableAI && aiClient == nil {
+		return nil, errors.New("启用了AI能力但未配置AI环境变量")
+	}
+
 	runner, err := play.NewRunner()
 	if err != nil {
 		return nil, err
@@ -72,11 +81,17 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 		cfg:        &cfg.Boss,
 		aiCfg:      cfg.AI,
 		bot:        bot.New(cfg.Bot, env),
-		ai:         ai.New(env),
+		ai:         aiClient,
 		runner:     runner,
 		black:      black,
 		dataFile:   dataFile,
 		cookieFile: cookieFile,
+	}
+	if cfg.Boss.EnableAI && aiClient != nil {
+		app.aiReady = make(chan error, 1)
+		go func() {
+			app.aiReady <- validateAiClient(aiClient)
+		}()
 	}
 	return app, nil
 }
@@ -348,6 +363,11 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 				Recruiter:   bossName,
 			}
 
+			if !a.jobMatchesProfile(keyword, job) {
+				log.Printf("[boss] 职位[%s] 与个人介绍不匹配，自动跳过", job.JobName)
+				continue
+			}
+
 			_, err := a.resumeSubmission(page, keyword, job)
 			if err != nil {
 				log.Printf("[boss] 投递岗位失败: %v", err)
@@ -542,6 +562,58 @@ func (a *App) updateListData() error {
 	return nil
 }
 
+func (a *App) jobMatchesProfile(keyword string, job Job) bool {
+	if !a.cfg.EnableAI || a.ai == nil {
+		return true
+	}
+	if job.JobInfo == "" {
+		return true
+	}
+	if err := a.ensureAiReady(); err != nil {
+		log.Printf("[boss] AI检测失败，跳过职位[%s]：%v", job.JobName, err)
+		return false
+	}
+	prompt := fmt.Sprintf("请根据以下个人介绍与职位信息判断是否匹配，匹配仅回复true，不匹配仅回复false。个人介绍：%s。职位：%s（关键词：%s）。职位描述：%s", a.aiCfg.Introduce, job.JobName, keyword, job.JobInfo)
+	resp, err := a.ai.Chat(prompt)
+	if err != nil {
+		log.Printf("[boss] 职位[%s] 匹配检测失败：%v", job.JobName, err)
+		return false
+	}
+	return parseAiBoolean(resp)
+}
+
+func parseAiBoolean(resp string) bool {
+	lower := strings.ToLower(strings.TrimSpace(resp))
+	switch {
+	case strings.Contains(lower, "false"), strings.Contains(lower, "不匹配"), strings.Contains(lower, "不合适"), strings.Contains(lower, "no"):
+		return false
+	case strings.Contains(lower, "true"), strings.Contains(lower, "匹配"), strings.Contains(lower, "合适"), strings.Contains(lower, "yes"):
+		return true
+	default:
+		return false
+	}
+}
+
+func validateAiClient(client *ai.Client) error {
+	if client == nil {
+		return nil
+	}
+	if _, err := client.Chat("你好"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *App) ensureAiReady() error {
+	if a.aiReady == nil {
+		return nil
+	}
+	a.aiOnce.Do(func() {
+		a.aiReadyErr = <-a.aiReady
+	})
+	return a.aiReadyErr
+}
+
 func (a *App) waitForSlider(page playwright.Page) error {
 	const sliderURL = "https://www.zhipin.com/web/user/safe/verify-slider"
 	deadline := time.Now().Add(5 * time.Minute)
@@ -704,6 +776,10 @@ func resolveResumePath() string {
 
 func (a *App) checkJob(keyword, jobName, jd string) (bool, string) {
 	if a.ai == nil || !a.ai.Enabled() {
+		return false, ""
+	}
+	if err := a.ensureAiReady(); err != nil {
+		log.Printf("[boss] AI生成打招呼语失败：%v", err)
 		return false, ""
 	}
 	prompt := fmt.Sprintf(a.aiCfg.Prompt, a.aiCfg.Introduce, keyword, jobName, jd, a.cfg.SayHi)

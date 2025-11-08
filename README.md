@@ -22,10 +22,11 @@
 
 脚本逻辑：
 1. 初始化 `build/` 目录（若已存在则保留其中的 `data/`、`.playwright/` 等运行时文件，确保 Cookie 不被清空）；
-2. 将最新的 `config.yaml`、`.env`、`assets/` 同步到 `build/`；
+2. 若 `build/` 中尚无 `config.yaml` / `.env`，则首次运行时从根目录复制一份；以后不再覆盖，方便你在 `build/` 内维护私有配置；
 3. 若全局 `.playwright/` 不存在则安装一次，并复制到 `build/.playwright/`；
 4. 在 `build/` 下编译当前平台的最新 `boss` 可执行文件；
 5. 切换到 `build/` 并运行该二进制，使所有相对路径与 release 包一致（登录凭证永远保存在 `build/data/boss/cookie.json`）。
+6. 程序启动前会向大模型发送“你好”进行连通性自检；每条职位在投递前也会通过大模型判断是否与 `ai.introduce` 匹配，仅匹配的职位才会继续自动投递。
 
 ### 2. 客户/部署环境（无 Go）
 
@@ -103,4 +104,13 @@ export PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 
 1. **启动报错 `please install the driver first`**：说明 `.playwright/` 目录缺失；请重新执行 `./scripts/start.sh` 或 `./scripts/package.sh`，或确保 release 包完整解压。
 2. **需要更新配置/黑名单**：继续编辑根目录下的 `config.yaml`／`data/boss/data.json`，与原 Java 项目保持一致（Java 版本仍使用 `src/main/java/boss/data.json`）。
+3. **AI 401/403/404 错误**：检查 `.env` 中的 `BASE_URL`、`API_KEY`、`MODEL`；如使用非官方 OpenAI 兼容接口（火山引擎、DeepSeek 等），可额外设置 `BASE_PATH`（默认自动根据 `BASE_URL` 推断：若以 `/api/v3` 结尾则补全 `/chat/completions`，否则使用 `/v1/chat/completions`）或直接设置 `BASE_ENDPOINT`（完整 URL）。例如：
+   ```env
+   BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+   BASE_PATH=/chat/completions
+   ```
+   或者：
+   ```env
+   BASE_ENDPOINT=https://ark.cn-beijing.volces.com/api/v3/chat/completions
+   ```
 3. **想要自带浏览器缓存**：只需将 `.playwright/` 目录放到可执行文件同级，启动脚本会自动指向该路径。
