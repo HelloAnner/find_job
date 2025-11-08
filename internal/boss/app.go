@@ -172,9 +172,7 @@ func (a *App) printResult() {
 	duration := utils.FormatDuration(a.startTime, time.Now())
 	msg := fmt.Sprintf("\nBoss投递完成，共发起%d个聊天，用时%s", len(a.results), duration)
 	log.Println(msg)
-	if a.bot != nil && len(a.results) > 0 {
-		a.bot.Send(a.composeResultMarkdown(msg, duration))
-	}
+	// 企业微信在单个岗位成功时已实时推送，此处仅记录日志
 	if err := a.saveData(); err != nil {
 		log.Printf("[boss] 保存黑名单失败: %v", err)
 	}
@@ -279,10 +277,10 @@ func (a *App) buildSearchURL(city string) string {
 
 func (a *App) login(page playwright.Page) error {
 	log.Println("[boss] 打开Boss直聘网站中…")
-if _, err := page.Goto(homeURL); err != nil {
-	return fmt.Errorf("访问主页失败: %w", err)
-}
-sleepRandom(800, 1500)
+	if _, err := page.Goto(homeURL); err != nil {
+		return fmt.Errorf("访问主页失败: %w", err)
+	}
+	sleepRandom(800, 1500)
 	if err := a.waitForSlider(page); err != nil {
 		return err
 	}
@@ -526,7 +524,7 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	sendSuccess := false
 	if count, err := sendBtn.Count(); err == nil && count > 0 {
 		if err := sendBtn.Nth(0).Click(); err == nil {
-			play.Sleep(1)
+			sleepRandom(500, 900)
 			sendSuccess = true
 		}
 	}
@@ -547,7 +545,7 @@ func (a *App) updateListData() error {
 	if _, err := page.Goto("https://www.zhipin.com/web/geek/chat"); err != nil {
 		return err
 	}
-	play.Sleep(3)
+	sleepRandom(2000, 3500)
 
 	for {
 		finished := page.Locator(finishedText)
@@ -633,8 +631,41 @@ func escapeMarkdown(text string) string {
 	return replacer.Replace(text)
 }
 
+func (a *App) notifyJobSuccess(job *Job, greeting string) {
+	if a.bot == nil {
+		return
+	}
+	var sb strings.Builder
+	sb.WriteString("## 新投递成功\n")
+	if job.Href != "" {
+		sb.WriteString(fmt.Sprintf("- 岗位：[%s](%s)\n", escapeMarkdown(job.JobName), job.Href))
+	} else {
+		sb.WriteString(fmt.Sprintf("- 岗位：%s\n", escapeMarkdown(job.JobName)))
+	}
+	sb.WriteString(fmt.Sprintf("- 公司：%s\n", escapeMarkdown(job.CompanyName)))
+	if job.JobArea != "" {
+		sb.WriteString(fmt.Sprintf("- 城市/经验：%s\n", escapeMarkdown(job.JobArea)))
+	}
+	if job.Salary != "" {
+		sb.WriteString(fmt.Sprintf("- 薪资：%s\n", escapeMarkdown(job.Salary)))
+	}
+	if greeting != "" {
+		sb.WriteString(fmt.Sprintf("- 招呼语：%s\n", escapeMarkdown(greeting)))
+	}
+	sb.WriteString("- 状态：✅ 已发起沟通\n")
+	a.bot.Send(sb.String())
+}
+
 func today() string {
 	return time.Now().Format("2006-01-02")
+}
+
+func sleepRandom(minMs, maxMs int) {
+	if maxMs <= minMs {
+		maxMs = minMs + 1
+	}
+	delay := rand.Intn(maxMs-minMs) + minMs
+	time.Sleep(time.Duration(delay) * time.Millisecond)
 }
 
 func loadDailyCounter(path string) (*DailyCounter, error) {
@@ -743,7 +774,7 @@ func (a *App) waitForSlider(page playwright.Page) error {
 		if strings.HasPrefix(page.URL(), sliderURL) {
 			fmt.Println("\n【滑块验证】请手动完成Boss直聘滑块验证，通过后在控制台回车继续…")
 			_, _ = fmt.Scanln()
-			play.Sleep(1)
+			sleepRandom(600, 1200)
 			continue
 		}
 		return nil
@@ -777,7 +808,7 @@ func (a *App) scanLogin(page playwright.Page) error {
 	if _, err := page.Goto(homeURL + "/web/user/?ka=header-login"); err != nil {
 		return fmt.Errorf("进入登录页失败: %w", err)
 	}
-	play.Sleep(1)
+	sleepRandom(600, 1200)
 
 	loginBtn := page.Locator(loginBtn)
 	if count, err := loginBtn.Count(); err == nil && count > 0 {
