@@ -54,3 +54,4 @@ chromedriver
 *.jpg
 build/
 dist/
+.gocache/

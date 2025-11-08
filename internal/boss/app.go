@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ const (
 	baseURL    = "https://www.zhipin.com/web/geek/job"
 	dataPath   = "data/boss/data.json"
 	cookiePath = "data/boss/cookie.json"
+	statsPath  = "data/boss/stats.json"
 )
 
 // App is the Go port of the original Java Boss logic.
@@ -42,9 +44,29 @@ type App struct {
 	startTime  time.Time
 	dataFile   string
 	cookieFile string
+	statsFile  string
+	stats      *DailyCounter
+	maxChats   int
 	aiReady    chan error
 	aiOnce     sync.Once
 	aiReadyErr error
+}
+
+type DailyCounter struct {
+	Date  string `json:"date"`
+	Count int    `json:"count"`
+}
+
+func newDailyCounter() *DailyCounter {
+	return &DailyCounter{Date: today(), Count: 0}
+}
+
+func (dc *DailyCounter) resetIfNeeded() {
+	today := today()
+	if dc.Date != today {
+		dc.Date = today
+		dc.Count = 0
+	}
 }
 
 // NewApp wires all dependencies together.
@@ -61,6 +83,7 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 
 	dataFile := config.ResolvePath(dataPath)
 	cookieFile := config.ResolvePath(cookiePath)
+	statsFile := config.ResolvePath(statsPath)
 
 	if err := utils.EnsureFile(dataFile, []byte(`{"blackCompanies":[],"blackRecruiters":[],"blackJobs":[]}`)); err != nil {
 		runner.Close()
@@ -77,6 +100,12 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 		return nil, err
 	}
 
+	stats, err := loadDailyCounter(statsFile)
+	if err != nil {
+		log.Printf("[boss] 读取投递计数失败: %v", err)
+		stats = newDailyCounter()
+	}
+
 	app := &App{
 		cfg:        &cfg.Boss,
 		aiCfg:      cfg.AI,
@@ -86,6 +115,9 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 		black:      black,
 		dataFile:   dataFile,
 		cookieFile: cookieFile,
+		statsFile:  statsFile,
+		stats:      stats,
+		maxChats:   cfg.Boss.MaxChat,
 	}
 	if cfg.Boss.EnableAI && aiClient != nil {
 		app.aiReady = make(chan error, 1)
@@ -136,10 +168,11 @@ func (a *App) Run() error {
 }
 
 func (a *App) printResult() {
-	msg := fmt.Sprintf("\nBoss投递完成，共发起%d个聊天，用时%s", len(a.results), utils.FormatDuration(a.startTime, time.Now()))
+	duration := utils.FormatDuration(a.startTime, time.Now())
+	msg := fmt.Sprintf("\nBoss投递完成，共发起%d个聊天，用时%s", len(a.results), duration)
 	log.Println(msg)
-	if a.bot != nil {
-		a.bot.SendWithTime(msg)
+	if a.bot != nil && len(a.results) > 0 {
+		a.bot.Send(a.composeResultMarkdown(msg, duration))
 	}
 	if err := a.saveData(); err != nil {
 		log.Printf("[boss] 保存黑名单失败: %v", err)
@@ -287,6 +320,10 @@ func (a *App) login(page playwright.Page) error {
 func (a *App) postJobByCity(page playwright.Page, city string) error {
 	searchURL := a.buildSearchURL(city)
 	for _, keyword := range a.cfg.Keywords {
+		if !a.canSendMore() {
+			log.Printf("[boss] 已达每日投递上限(%d)，停止后续关键词处理", a.maxChats)
+			return nil
+		}
 		encoded := url.QueryEscape(keyword)
 		target := fmt.Sprintf("%s&query=%s", searchURL, encoded)
 		log.Printf("[boss] 投递地址:%s", searchURL+"&query="+keyword)
@@ -323,6 +360,10 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 		}
 		postCount := 0
 		for i := 0; i < count; i++ {
+			if !a.canSendMore() {
+				log.Printf("[boss] 已达每日投递上限(%d)，停止当前关键词剩余岗位", a.maxChats)
+				return nil
+			}
 			cards = page.Locator(jobCardSelector)
 			if err := cards.Nth(i).Click(); err != nil {
 				log.Printf("[boss] 点击岗位卡片失败: %v", err)
@@ -368,7 +409,7 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 				continue
 			}
 
-			_, err := a.resumeSubmission(page, keyword, job)
+			_, err := a.resumeSubmission(page, keyword, &job)
 			if err != nil {
 				log.Printf("[boss] 投递岗位失败: %v", err)
 			}
@@ -379,7 +420,7 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 	return nil
 }
 
-func (a *App) resumeSubmission(page playwright.Page, keyword string, job Job) (bool, error) {
+func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (bool, error) {
 	play.Sleep(1)
 
 	moreBtn := page.Locator(moreJobButton)
@@ -393,6 +434,7 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job Job) (b
 		return false, nil
 	}
 	detailURL := homeURL + href
+	job.Href = detailURL
 
 	detailPage, err := page.Context().NewPage()
 	if err != nil {
@@ -493,7 +535,8 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job Job) (b
 	log.Printf("[boss] 投递完成 | 岗位：%s | 招呼语：%s | 图片简历：%s", job.JobName, message, map[bool]string{true: "已发送", false: "未发送"}[imgResume])
 
 	if sendSuccess {
-		a.results = append(a.results, job)
+		a.results = append(a.results, *job)
+		a.incrementDailyCount()
 	}
 	return sendSuccess, nil
 }
@@ -560,6 +603,84 @@ func (a *App) updateListData() error {
 
 	log.Printf("[boss] 黑名单公司数量：%d", len(a.black.Companies))
 	return nil
+}
+
+func (a *App) composeResultMarkdown(summary, duration string) string {
+	if len(a.results) == 0 {
+		return summary
+	}
+	var sb strings.Builder
+	sb.WriteString(summary)
+	sb.WriteString("\n\n## 投递详情\n")
+	sb.WriteString("| 岗位 | 公司 | 城市/经验 | 状态 |\n")
+	sb.WriteString("| --- | --- | --- | --- |\n")
+	for _, job := range a.results {
+		jobLink := escapeMarkdown(job.JobName)
+		if job.Href != "" {
+			jobLink = fmt.Sprintf("[%s](%s)", escapeMarkdown(job.JobName), job.Href)
+		}
+		company := escapeMarkdown(job.CompanyName)
+		area := escapeMarkdown(job.JobArea)
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | ✅ 已发起沟通 |\n", jobLink, company, area))
+	}
+	sb.WriteString("\n> 用时：" + duration)
+	return sb.String()
+}
+
+func escapeMarkdown(text string) string {
+	replacer := strings.NewReplacer("|", "\\|", "[", "\\[", "]", "\\]", "(", "\\(", ")", "\\)")
+	return replacer.Replace(text)
+}
+
+func today() string {
+	return time.Now().Format("2006-01-02")
+}
+
+func loadDailyCounter(path string) (*DailyCounter, error) {
+	if data, err := os.ReadFile(path); err == nil {
+		var counter DailyCounter
+		if err := json.Unmarshal(data, &counter); err == nil {
+			counter.resetIfNeeded()
+			return &counter, nil
+		}
+	}
+	return newDailyCounter(), nil
+}
+
+func (a *App) saveDailyCounter() {
+	if a.stats == nil || a.statsFile == "" {
+		return
+	}
+	a.stats.resetIfNeeded()
+	data, err := json.MarshalIndent(a.stats, "", "  ")
+	if err != nil {
+		log.Printf("[boss] 保存投递计数失败: %v", err)
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(a.statsFile), 0o755); err != nil {
+		log.Printf("[boss] 创建投递计数目录失败: %v", err)
+		return
+	}
+	if err := os.WriteFile(a.statsFile, data, 0o644); err != nil {
+		log.Printf("[boss] 写入投递计数失败: %v", err)
+	}
+}
+
+func (a *App) canSendMore() bool {
+	if a.maxChats <= 0 || a.stats == nil {
+		return true
+	}
+	a.stats.resetIfNeeded()
+	return a.stats.Count < a.maxChats
+}
+
+func (a *App) incrementDailyCount() {
+	if a.stats == nil {
+		return
+	}
+	a.stats.resetIfNeeded()
+	a.stats.Count++
+	a.saveDailyCounter()
 }
 
 func (a *App) jobMatchesProfile(keyword string, job Job) bool {

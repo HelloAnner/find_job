@@ -46,6 +46,8 @@ type BossConfig struct {
 	ExpectedSalary []int             `yaml:"expectedSalary"`
 	WaitTime       int               `yaml:"waitTime"`
 	DeadStatus     []string          `yaml:"deadStatus"`
+	MaxChat        int               `yaml:"max"`
+	Interval       int               `yaml:"interval"`
 }
 
 // BotConfig controls enterprise WeChat notifications.
@@ -102,6 +104,14 @@ func (b *BossConfig) normalize() error {
 		}
 		b.CityCode = codes
 	}
+
+	if b.MaxChat <= 0 {
+		b.MaxChat = 100
+	}
+	if b.Interval <= 0 {
+		b.Interval = 1
+	}
+
 	return nil
 }
 
@@ -159,6 +169,14 @@ func convertCities(values []string, custom map[string]string) ([]string, error) 
 		city = strings.TrimSpace(city)
 		if city == "" {
 			codes = append(codes, UnlimitedCode)
+			continue
+		}
+		if strings.EqualFold(city, "不限") {
+			codes = append(codes, UnlimitedCode)
+			continue
+		}
+		if strings.EqualFold(city, "全国") {
+			codes = append(codes, cityEnum["全国"])
 			continue
 		}
 		if customCode, ok := custom[city]; ok {

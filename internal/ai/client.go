@@ -80,7 +80,7 @@ func (c *Client) Chat(prompt string) (string, error) {
 	if !c.Enabled() {
 		return "", fmt.Errorf("ai client not configured")
 	}
-	log.Printf("[ai] prompt=%s", truncateForLog(prompt))
+	log.Printf("[ai] prompt=%s", prompt)
 
 	payload := map[string]any{
 		"model":       c.model,
@@ -123,7 +123,7 @@ func (c *Client) Chat(prompt string) (string, error) {
 	}
 	msg := data.Choices[0].Message.Content
 	log.Printf("[ai] request %s 使用模型 %s，tokens prompt=%d completion=%d total=%d", data.ID, data.Model, data.Usage.PromptTokens, data.Usage.CompletionTokens, data.Usage.TotalTokens)
-	log.Printf("[ai] response=%s", truncateForLog(msg))
+	log.Printf("[ai] response=%s", msg)
 	return msg, nil
 }
 
@@ -140,11 +140,4 @@ type chatResponse struct {
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
 	} `json:"usage"`
-}
-
-func truncateForLog(content string) string {
-	if len(content) <= 200 {
-		return content
-	}
-	return content[:200] + "..."
 }

@@ -3,7 +3,6 @@ package bot
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -32,23 +31,16 @@ func (c *Client) Enabled() bool {
 	return c != nil && c.enabled
 }
 
-// SendWithTime prefixes the message with the current timestamp to mimic the Java behavior.
-func (c *Client) SendWithTime(message string) {
-	if !c.Enabled() {
-		return
-	}
-	ts := time.Now().Format("2006-01-02 15:04:05")
-	c.Send(fmt.Sprintf("%s %s", ts, message))
-}
-
 // Send pushes the message payload to the webhook.
 func (c *Client) Send(message string) {
 	if !c.Enabled() {
 		return
 	}
 	payload := map[string]any{
-		"msgtype": "text",
-		"text":    map[string]string{"content": message},
+		"msgtype": "markdown",
+		"markdown": map[string]string{
+			"content": message,
+		},
 	}
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequest(http.MethodPost, c.hookURL, bytes.NewReader(body))

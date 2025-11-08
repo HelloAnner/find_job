@@ -7,6 +7,7 @@ import (
 
 // Job represents a single Boss直聘职位。
 type Job struct {
+	Href        string
 	JobName     string
 	Salary      string
 	JobArea     string
@@ -16,6 +17,9 @@ type Job struct {
 }
 
 func (j Job) String() string {
+	if j.Href != "" {
+		return fmt.Sprintf("【%s, %s, %s, %s, %s, %s】", j.CompanyName, j.JobName, j.JobArea, j.Salary, j.Recruiter, j.Href)
+	}
 	return fmt.Sprintf("【%s, %s, %s, %s, %s】", j.CompanyName, j.JobName, j.JobArea, j.Salary, j.Recruiter)
 }
 

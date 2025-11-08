@@ -6,6 +6,8 @@
 
 - `boss`（Go 可执行文件）/`scripts/start.sh`：运行入口
 - `config.yaml`、`.env`：与原项目相同的配置
+- `config.yaml` 中新增 `boss.max`（默认 100），用于限制每日自动打招呼次数；计数保存在 `data/boss/stats.json`，每天自动重置。
+- `config.yaml` 中新增 `boss.interval`（默认 1），单位小时。程序会无限循环执行：运行一次 -> 等待 `interval` 小时 -> 再执行。
 - `assets/`：静态资源（例如 `assets/boss/city-industry-code.json`、`assets/resume.jpg`）
 - `data/`：运行期产生的黑名单、Cookie 等数据（默认 `data/boss/data.json`、`data/boss/cookie.json`）
 - `config_templates/`：打包时使用的默认模板（`config_templates/config.yaml`、`config_templates/.env`）。
@@ -25,8 +27,9 @@
 2. 若 `build/` 中尚无 `config.yaml` / `.env`，则首次运行时从根目录复制一份；以后不再覆盖，方便你在 `build/` 内维护私有配置；
 3. 若全局 `.playwright/` 不存在则安装一次，并复制到 `build/.playwright/`；
 4. 在 `build/` 下编译当前平台的最新 `boss` 可执行文件；
-5. 切换到 `build/` 并运行该二进制，使所有相对路径与 release 包一致（登录凭证永远保存在 `build/data/boss/cookie.json`）。
-6. 程序启动前会向大模型发送“你好”进行连通性自检；每条职位在投递前也会通过大模型判断是否与 `ai.introduce` 匹配，仅匹配的职位才会继续自动投递。
+5. 运行该二进制，使所有相对路径与 release 包一致（登录凭证永远保存在 `build/data/boss/cookie.json`）。
+6. 程序启动前后台向大模型发送“你好”进行连通性自检；每条职位在投递前也会通过大模型判断是否与 `ai.introduce` 匹配，仅匹配的职位才会继续自动投递。
+7. 运行结束后，主程序会按照 `boss.interval` 设定的小时数自动进入下一轮，无需手动重启。
 
 ### 2. 客户/部署环境（无 Go）
 
