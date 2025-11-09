@@ -9,6 +9,7 @@
 - `config.yaml` 中新增 `boss.max`（默认 100），用于限制每日自动打招呼次数；计数保存在 `data/boss/stats.json`，每天自动重置。
 - `config.yaml` 中新增 `boss.interval`（默认 1），单位小时。程序会无限循环执行：运行一次 -> 等待 `interval` 小时 -> 再执行。
 - `config.yaml` 中新增 `boss.openWindows` / `boss.showWindows`（默认 true），为 false 时 Playwright 采用无头模式运行。若该模式下检测到 Cookie 失效，会自动临时弹出浏览器完成扫码登录，随后继续无头流程。
+- `bot.is_send` 控制企业微信推送开关；`bot.template` 支持使用 `{{变量名}}` 占位符自定义推送内容（详见“企业微信通知模板”）。
 - `assets/`：静态资源（例如 `assets/boss/city-industry-code.json`、`assets/resume.jpg`）
 - `data/`：运行期产生的黑名单、Cookie 等数据（默认 `data/boss/data.json`、`data/boss/cookie.json`）
 - `config_templates/`：打包时使用的默认模板（`config_templates/config.yaml`、`config_templates/.env`）。
@@ -82,6 +83,35 @@ export PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 ```
 
 若你将浏览器缓存放在项目根目录的 `.playwright/` 下，`scripts/start.sh` 会自动检测并指向该目录。
+
+## 企业微信通知模板
+
+`bot.template` 的默认内容如下，可根据需要调整：
+
+```
+## 新投递成功
+- 岗位：{{jobLink}}
+- 公司：{{companyName}}
+- 城市/经验：{{jobArea}}
+- 薪资：{{salary}}
+- 招呼语：{{greeting}}
+- 状态：{{status}}
+- 时间：{{timestamp}}
+```
+
+支持的占位符：
+
+- `{{jobName}}`：岗位名称（纯文本）
+- `{{jobLink}}`：岗位 Markdown 链接（若无链接则退化为岗位名称）
+- `{{jobHref}}`：岗位原始链接
+- `{{companyName}}`：公司名称
+- `{{jobArea}}`：城市 / 经验 / 标签
+- `{{salary}}`：薪资范围
+- `{{greeting}}`：打招呼内容
+- `{{status}}`：状态文案（默认“✅ 已发起沟通”）
+- `{{timestamp}}`：推送时间（格式 `YYYY-MM-DD HH:MM:SS`）
+
+将 `bot.is_send` 设为 `false` 时，所有场景下的企业微信推送都会被禁用。
 
 ## 打包
 

@@ -284,22 +284,27 @@ func (a *App) login(page playwright.Page) error {
 	}
 
 	if play.CookieFileExists(a.cookieFile) {
+		log.Println("[boss] 检测到历史Cookie，尝试加载…")
 		if err := a.runner.LoadCookies(a.cookieFile); err != nil {
 			log.Printf("[boss] 加载cookie失败: %v", err)
 		} else {
 			a.runner.InitStealth()
+			log.Println("[boss] Cookie加载完成，已注入浏览器")
 		}
 	}
 
-	log.Println("[boss] 打开Boss直聘网站中…")
+	log.Println("[boss] 正在访问Boss直聘主页…")
 	if _, err := page.Goto(homeURL); err != nil {
 		return fmt.Errorf("访问主页失败: %w", err)
 	}
+	log.Println("[boss] 主页加载完成，开始检查滑块验证…")
 	sleepRandom(800, 1500)
 	if err := a.waitForSlider(page); err != nil {
 		return err
 	}
+	log.Println("[boss] 滑块验证检查完毕")
 
+	log.Println("[boss] 检查登录状态…")
 	required, err := a.isLoginRequired(page)
 	if err != nil {
 		return err
@@ -337,19 +342,23 @@ func (a *App) loginWithVisibleWindow() error {
 	page := runner.Page()
 	runner.InitStealth()
 	log.Println("[boss] 已弹出浏览器，请扫码登录…")
+	log.Println("[boss] (临时窗口) 正在打开 Boss 主页…")
 	if _, err := page.Goto(homeURL); err != nil {
 		return fmt.Errorf("可视化登录访问主页失败: %w", err)
 	}
+	log.Println("[boss] (临时窗口) 主页加载完成，等待滑块验证…")
 	sleepRandom(800, 1500)
 	if err := a.waitForSlider(page); err != nil {
 		return err
 	}
+	log.Println("[boss] (临时窗口) 滑块验证通过，进入扫码流程…")
 	if err := a.scanLogin(page); err != nil {
 		return err
 	}
 	if err := runner.SaveCookies(a.cookieFile); err != nil {
 		return fmt.Errorf("保存登录后的cookie失败: %w", err)
 	}
+	log.Println("[boss] (临时窗口) 登录完成，Cookie 已写入本地")
 	return nil
 }
 
@@ -614,6 +623,7 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	if sendSuccess {
 		a.results = append(a.results, *job)
 		a.incrementDailyCount()
+		a.notifyJobSuccess(job, message)
 	}
 	return sendSuccess, nil
 }
@@ -848,25 +858,22 @@ func (a *App) notifyJobSuccess(job *Job, greeting string) {
 	if a.bot == nil {
 		return
 	}
-	var sb strings.Builder
-	sb.WriteString("## 新投递成功\n")
+	jobLink := escapeMarkdown(job.JobName)
 	if job.Href != "" {
-		sb.WriteString(fmt.Sprintf("- 岗位：[%s](%s)\n", escapeMarkdown(job.JobName), job.Href))
-	} else {
-		sb.WriteString(fmt.Sprintf("- 岗位：%s\n", escapeMarkdown(job.JobName)))
+		jobLink = fmt.Sprintf("[%s](%s)", escapeMarkdown(job.JobName), job.Href)
 	}
-	sb.WriteString(fmt.Sprintf("- 公司：%s\n", escapeMarkdown(job.CompanyName)))
-	if job.JobArea != "" {
-		sb.WriteString(fmt.Sprintf("- 城市/经验：%s\n", escapeMarkdown(job.JobArea)))
+	data := map[string]string{
+		"jobName":     escapeMarkdown(job.JobName),
+		"jobLink":     jobLink,
+		"jobHref":     job.Href,
+		"companyName": escapeMarkdown(job.CompanyName),
+		"jobArea":     escapeMarkdown(job.JobArea),
+		"salary":      escapeMarkdown(job.Salary),
+		"greeting":    escapeMarkdown(greeting),
+		"status":      "✅ 已发起沟通",
+		"timestamp":   time.Now().Format("2006-01-02 15:04:05"),
 	}
-	if job.Salary != "" {
-		sb.WriteString(fmt.Sprintf("- 薪资：%s\n", escapeMarkdown(job.Salary)))
-	}
-	if greeting != "" {
-		sb.WriteString(fmt.Sprintf("- 招呼语：%s\n", escapeMarkdown(greeting)))
-	}
-	sb.WriteString("- 状态：✅ 已发起沟通\n")
-	a.bot.Send(sb.String())
+	a.bot.SendTemplate(data)
 }
 
 func today() string {
@@ -985,6 +992,7 @@ func (a *App) waitForSlider(page playwright.Page) error {
 	deadline := time.Now().Add(5 * time.Minute)
 	for time.Now().Before(deadline) {
 		if strings.HasPrefix(page.URL(), sliderURL) {
+			log.Println("[boss] 检测到滑块验证页面，等待手动完成…")
 			fmt.Println("\n【滑块验证】请手动完成Boss直聘滑块验证，通过后在控制台回车继续…")
 			_, _ = fmt.Scanln()
 			sleepRandom(600, 1200)

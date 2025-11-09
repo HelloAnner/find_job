@@ -54,7 +54,8 @@ type BossConfig struct {
 
 // BotConfig controls enterprise WeChat notifications.
 type BotConfig struct {
-	IsSend bool `yaml:"is_send"`
+	IsSend   bool   `yaml:"is_send"`
+	Template string `yaml:"template"`
 }
 
 // AiConfig provides the LLM introduction and prompt template.
