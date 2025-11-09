@@ -20,7 +20,7 @@ type Runner struct {
 }
 
 // NewRunner creates a chromium runner configured like the Java PlaywrightUtil.
-func NewRunner() (*Runner, error) {
+func NewRunner(headless bool) (*Runner, error) {
 	ensurePlaywrightCache()
 
 	pw, err := playwright.Run()
@@ -29,7 +29,7 @@ func NewRunner() (*Runner, error) {
 	}
 
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(false),
+		Headless: playwright.Bool(headless),
 		SlowMo:   playwright.Float(50),
 	})
 	if err != nil {

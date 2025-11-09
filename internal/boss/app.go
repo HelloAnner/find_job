@@ -77,7 +77,7 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 		return nil, errors.New("启用了AI能力但未配置AI环境变量")
 	}
 
-	runner, err := play.NewRunner()
+	runner, err := play.NewRunner(!cfg.Boss.OpenWindowsEnabled())
 	if err != nil {
 		return nil, err
 	}
@@ -276,6 +276,21 @@ func (a *App) buildSearchURL(city string) string {
 // will be implemented in the next iteration to achieve feature parity with the Java version.
 
 func (a *App) login(page playwright.Page) error {
+	if !a.cfg.OpenWindowsEnabled() && !a.hasCookieData() {
+		log.Println("[boss] 未检测到Cookie，准备临时弹出浏览器完成首次登录…")
+		if err := a.loginWithVisibleWindow(); err != nil {
+			return err
+		}
+	}
+
+	if play.CookieFileExists(a.cookieFile) {
+		if err := a.runner.LoadCookies(a.cookieFile); err != nil {
+			log.Printf("[boss] 加载cookie失败: %v", err)
+		} else {
+			a.runner.InitStealth()
+		}
+	}
+
 	log.Println("[boss] 打开Boss直聘网站中…")
 	if _, err := page.Goto(homeURL); err != nil {
 		return fmt.Errorf("访问主页失败: %w", err)
@@ -285,26 +300,22 @@ func (a *App) login(page playwright.Page) error {
 		return err
 	}
 
-	if play.CookieFileExists(a.cookieFile) {
-		if err := a.runner.LoadCookies(a.cookieFile); err != nil {
-			log.Printf("[boss] 加载cookie失败: %v", err)
-		} else {
-			if _, err := page.Reload(); err != nil {
-				return fmt.Errorf("刷新页面失败: %w", err)
-			}
-			sleepRandom(600, 1200)
-			if err := a.waitForSlider(page); err != nil {
-				return err
-			}
-			a.runner.InitStealth()
-		}
-	}
-
 	required, err := a.isLoginRequired(page)
 	if err != nil {
 		return err
 	}
 	if required {
+		if !a.cfg.OpenWindowsEnabled() {
+			log.Println("[boss] cookie失效，当前为无头模式，将临时弹出窗口完成扫码登录…")
+			if err := a.loginWithVisibleWindow(); err != nil {
+				return err
+			}
+			if err := a.reloadHeadlessSession(page); err != nil {
+				return err
+			}
+			log.Println("[boss] 登录已完成，继续无头执行…")
+			return nil
+		}
 		log.Println("[boss] cookie失效，尝试扫码登录…")
 		if err := a.scanLogin(page); err != nil {
 			return err
@@ -314,6 +325,66 @@ func (a *App) login(page playwright.Page) error {
 		}
 	}
 	return nil
+}
+
+func (a *App) loginWithVisibleWindow() error {
+	runner, err := play.NewRunner(false)
+	if err != nil {
+		return fmt.Errorf("创建临时浏览器失败: %w", err)
+	}
+	defer runner.Close()
+
+	page := runner.Page()
+	runner.InitStealth()
+	log.Println("[boss] 已弹出浏览器，请扫码登录…")
+	if _, err := page.Goto(homeURL); err != nil {
+		return fmt.Errorf("可视化登录访问主页失败: %w", err)
+	}
+	sleepRandom(800, 1500)
+	if err := a.waitForSlider(page); err != nil {
+		return err
+	}
+	if err := a.scanLogin(page); err != nil {
+		return err
+	}
+	if err := runner.SaveCookies(a.cookieFile); err != nil {
+		return fmt.Errorf("保存登录后的cookie失败: %w", err)
+	}
+	return nil
+}
+
+func (a *App) reloadHeadlessSession(page playwright.Page) error {
+	if err := a.runner.LoadCookies(a.cookieFile); err != nil {
+		return fmt.Errorf("加载最新cookie失败: %w", err)
+	}
+	if _, err := page.Goto(homeURL); err != nil {
+		return fmt.Errorf("刷新无头浏览器状态失败: %w", err)
+	}
+	sleepRandom(600, 1200)
+	if err := a.waitForSlider(page); err != nil {
+		return err
+	}
+	required, err := a.isLoginRequired(page)
+	if err != nil {
+		return err
+	}
+	if required {
+		return errors.New("登录后仍检测到未登录状态，请重试")
+	}
+	return nil
+}
+
+func (a *App) hasCookieData() bool {
+	data, err := os.ReadFile(a.cookieFile)
+	if err != nil {
+		return false
+	}
+	var cookies []map[string]interface{}
+	if err := json.Unmarshal(data, &cookies); err == nil {
+		return len(cookies) > 0
+	}
+	trimmed := strings.TrimSpace(string(data))
+	return trimmed != "" && trimmed != "[]"
 }
 
 func (a *App) postJobByCity(page playwright.Page, city string) error {
@@ -443,6 +514,16 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 		_ = detailPage.Close()
 		sleepRandom(500, 1000)
 	}()
+	extraPages := make([]playwright.Page, 0, 2)
+	defer func() {
+		for _, p := range extraPages {
+			if p == nil {
+				continue
+			}
+			_ = p.Close()
+			sleepRandom(200, 400)
+		}
+	}()
 
 	if _, err := detailPage.Goto(detailURL); err != nil {
 		return false, err
@@ -465,23 +546,20 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 		log.Printf("[boss] 未找到立即沟通按钮，跳过岗位:%s", job.JobName)
 		return false, nil
 	}
-	if err := chatBtn.Nth(0).Click(); err != nil {
+	chatPage := detailPage
+	popup, err := detailPage.Context().ExpectPage(func() error {
+		return chatBtn.Nth(0).Click()
+	}, playwright.BrowserContextExpectPageOptions{Timeout: playwright.Float(2000)})
+	if err != nil && !errors.Is(err, playwright.ErrTimeout) {
 		return false, err
+	}
+	if popup != nil {
+		chatPage = popup
+		extraPages = append(extraPages, popup)
 	}
 	sleepRandom(500, 900)
 
-	inputLocator := detailPage.Locator(chatInputSelector)
-	ready := false
-	for i := 0; i < 10; i++ {
-		if count, err := inputLocator.Count(); err == nil && count > 0 {
-			visible, _ := inputLocator.Nth(0).IsVisible()
-			if visible {
-				ready = true
-				break
-			}
-		}
-		sleepRandom(500, 900)
-	}
+	chatPage, inputLocator, ready := a.waitForChatInput(chatPage, &extraPages)
 	if !ready {
 		log.Printf("[boss] 聊天输入框未出现，跳过岗位:%s", job.JobName)
 		return false, nil
@@ -511,7 +589,7 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	imgResume := false
 	if a.cfg.SendImgResume {
 		if resumePath := resolveResumePath(); resumePath != "" {
-			uploader := detailPage.Locator(imageUploadSelector)
+			uploader := chatPage.Locator(imageUploadSelector)
 			if count, err := uploader.Count(); err == nil && count > 0 {
 				if err := uploader.Nth(0).SetInputFiles(resumePath); err == nil {
 					imgResume = true
@@ -520,7 +598,7 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 		}
 	}
 
-	sendBtn := detailPage.Locator(sendButtonSelector)
+	sendBtn := chatPage.Locator(sendButtonSelector)
 	sendSuccess := false
 	if count, err := sendBtn.Count(); err == nil && count > 0 {
 		if err := sendBtn.Nth(0).Click(); err == nil {
@@ -538,6 +616,141 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 		a.incrementDailyCount()
 	}
 	return sendSuccess, nil
+}
+
+func (a *App) waitForChatInput(page playwright.Page, extraPages *[]playwright.Page) (playwright.Page, playwright.Locator, bool) {
+	active := page
+	for i := 0; i < 20; i++ {
+		if locator := a.visibleChatInput(active); locator != nil {
+			return active, locator, true
+		}
+		if newPage, clicked := a.clickContinueChat(active); clicked {
+			if newPage != nil {
+				active = newPage
+				if extraPages != nil {
+					*extraPages = append(*extraPages, newPage)
+				}
+			}
+			continue
+		}
+		sleepRandom(500, 900)
+	}
+	return active, nil, false
+}
+
+func (a *App) visibleChatInput(page playwright.Page) playwright.Locator {
+	locator := page.Locator(chatInputSelector)
+	count, err := locator.Count()
+	if err != nil || count == 0 {
+		return nil
+	}
+	visible, _ := locator.Nth(0).IsVisible()
+	if !visible {
+		return nil
+	}
+	return locator
+}
+
+func (a *App) clickContinueChat(page playwright.Page) (playwright.Page, bool) {
+	roleLocators := []playwright.Locator{
+		page.GetByRole("link", playwright.PageGetByRoleOptions{Name: "继续沟通"}),
+		page.GetByRole("button", playwright.PageGetByRoleOptions{Name: "继续沟通"}),
+	}
+	selectors := []string{
+		fmt.Sprintf("%s >> text=/继续\\s*沟通/", dialogContainer),
+		"text=/继续\\s*沟通/",
+		"a:has-text(\"继续沟通\")",
+		"button:has-text(\"继续沟通\")",
+		"[role='button']:has-text(\"继续沟通\")",
+		"[role='link']:has-text(\"继续沟通\")",
+		"//a[contains(., '继续沟通')]",
+		"//button[contains(., '继续沟通')]",
+	}
+	locators := append([]playwright.Locator{}, roleLocators...)
+	for _, selector := range selectors {
+		locators = append(locators, page.Locator(selector))
+	}
+
+	ctx := page.Context()
+	for _, loc := range locators {
+		if loc == nil {
+			continue
+		}
+		count, err := loc.Count()
+		if err != nil || count == 0 {
+			continue
+		}
+		for i := 0; i < count; i++ {
+			btn := loc.Nth(i)
+			if btn == nil {
+				continue
+			}
+			visible, err := btn.IsVisible()
+			if err != nil {
+				continue
+			}
+			if !visible {
+				_ = btn.ScrollIntoViewIfNeeded()
+				visible, _ = btn.IsVisible()
+			}
+			if !visible {
+				continue
+			}
+
+			before := ctx.Pages()
+			if err := btn.Click(); err != nil {
+				log.Printf("[boss] 点击“继续沟通”失败: %v", err)
+				continue
+			}
+			sleepRandom(400, 700)
+
+			for attempt := 0; attempt < 6; attempt++ {
+				now := ctx.Pages()
+				if popup := findNewPage(before, now); popup != nil {
+					_ = popup.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+						State:   playwright.LoadStateDomcontentloaded,
+						Timeout: playwright.Float(5000),
+					})
+					log.Printf("[boss] 检测到“继续沟通”确认弹窗，已自动切换到新页面")
+					return popup, true
+				}
+				time.Sleep(150 * time.Millisecond)
+			}
+
+			_ = page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+				State:   playwright.LoadStateDomcontentloaded,
+				Timeout: playwright.Float(4000),
+			})
+			if err := page.WaitForURL("**/chat**", playwright.PageWaitForURLOptions{
+				Timeout: playwright.Float(2000),
+			}); err == nil {
+				log.Printf("[boss] 点击“继续沟通”后进入聊天页面")
+			} else {
+				log.Printf("[boss] 已点击“继续沟通”，等待聊天页面加载")
+			}
+			return nil, true
+		}
+	}
+	return nil, false
+}
+
+func findNewPage(before, after []playwright.Page) playwright.Page {
+	seen := make(map[playwright.Page]struct{}, len(before))
+	for _, p := range before {
+		if p == nil {
+			continue
+		}
+		seen[p] = struct{}{}
+	}
+	for _, p := range after {
+		if p == nil {
+			continue
+		}
+		if _, ok := seen[p]; !ok {
+			return p
+		}
+	}
+	return nil
 }
 
 func (a *App) updateListData() error {

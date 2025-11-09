@@ -8,6 +8,7 @@
 - `config.yaml`、`.env`：与原项目相同的配置
 - `config.yaml` 中新增 `boss.max`（默认 100），用于限制每日自动打招呼次数；计数保存在 `data/boss/stats.json`，每天自动重置。
 - `config.yaml` 中新增 `boss.interval`（默认 1），单位小时。程序会无限循环执行：运行一次 -> 等待 `interval` 小时 -> 再执行。
+- `config.yaml` 中新增 `boss.openWindows` / `boss.showWindows`（默认 true），为 false 时 Playwright 采用无头模式运行。若该模式下检测到 Cookie 失效，会自动临时弹出浏览器完成扫码登录，随后继续无头流程。
 - `assets/`：静态资源（例如 `assets/boss/city-industry-code.json`、`assets/resume.jpg`）
 - `data/`：运行期产生的黑名单、Cookie 等数据（默认 `data/boss/data.json`、`data/boss/cookie.json`）
 - `config_templates/`：打包时使用的默认模板（`config_templates/config.yaml`、`config_templates/.env`）。
