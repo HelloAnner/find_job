@@ -3,7 +3,6 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 config.yaml
-!config_templates/config.yaml
 .git-rewrite
 ### IntelliJ IDEA ###
 *.iws
@@ -49,7 +48,6 @@ merge_prs.log
 .DS_Store
 cookie.json
 .env
-!config_templates/.env
 chromedriver
 *.jpg
 build/

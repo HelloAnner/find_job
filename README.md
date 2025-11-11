@@ -12,9 +12,9 @@
 - `bot.is_send` 控制企业微信推送开关；`bot.template` 支持使用 `{{变量名}}` 占位符自定义推送内容（详见“企业微信通知模板”）。
 - `assets/`：静态资源（例如 `assets/boss/city-industry-code.json`、`assets/resume.jpg`）
 - `data/`：运行期产生的黑名单、Cookie 等数据（默认 `data/boss/data.json`、`data/boss/cookie.json`）
-- `config_templates/`：打包时使用的默认模板（`config_templates/config.yaml`、`config_templates/.env`）。
+- 项目根目录包含默认配置文件模板（`config.yaml`、`.env`），用于开发和打包参考。
 
-> **提示**：`config_templates/` 仅用于生成 release 模板；实际运行时请在仓库根目录准备真实的 `config.yaml` 和 `.env`（不会被 Git 跟踪），`./scripts/start.sh` 会将真实配置复制到 `build/` 环境中。
+> **提示**：项目根目录的 `config.yaml`、`.env` 是默认模板配置；实际运行时请在仓库根目录准备真实的 `config.yaml` 和 `.env`（不会被 Git 跟踪），`./scripts/start.sh` 会将真实配置复制到 `build/` 环境中。
 
 ## 运行方式
 
@@ -47,7 +47,7 @@
    ./scripts/start.sh
    ```
 
-   每个 zip 中都包含 `boss`/`boss.exe`、`scripts/start.sh`、`.playwright/` 及运行所需配置（其中 `config.yaml`、`.env` 均来自 `config_templates/` 的模板），解压后可直接运行；二进制会自动检测同级 `.playwright/` 并设置 `PLAYWRIGHT_BROWSERS_PATH`，双击 `boss.exe` 即可弹出浏览器窗口。
+   每个 zip 中都包含 `boss`/`boss.exe`、`scripts/start.sh`、`.playwright/` 及运行所需配置（其中 `config.yaml`、`.env` 来自项目根目录的模板文件），解压后可直接运行；二进制会自动检测同级 `.playwright/` 并设置 `PLAYWRIGHT_BROWSERS_PATH`，双击 `boss.exe` 即可弹出浏览器窗口。
 
 ## Playwright 浏览器安装指引
 
@@ -124,7 +124,7 @@ export PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 脚本会：
 1. 清理并重建 `dist/` 目录；
 2. 分别为 Windows amd64、macOS arm64、Linux amd64 交叉编译 `boss` 可执行文件；
-3. 自动下载/刷新 Playwright 浏览器运行时到 `./.playwright`，并与可执行文件、`config_templates/` 中的模板配置、`scripts/start.sh` 一并复制到目标目录；
+3. 自动下载/刷新 Playwright 浏览器运行时到 `./.playwright`，并与可执行文件、项目根目录的模板配置（`config.yaml`、`.env`）、`scripts/start.sh` 一并复制到目标目录；
 4. 打包产物示例：`dist/boss-windows-amd64.zip` 等。
 
 ## GitHub Actions

@@ -8,9 +8,9 @@ if ! command -v go >/dev/null 2>&1; then
   exit 1
 fi
 
-TEMPLATE_DIR="$ROOT_DIR/config_templates"
-CONFIG_TEMPLATE="$TEMPLATE_DIR/config.yaml"
-ENV_TEMPLATE="$TEMPLATE_DIR/.env"
+# Use root directory configuration templates
+CONFIG_TEMPLATE="$ROOT_DIR/config.yaml"
+ENV_TEMPLATE="$ROOT_DIR/.env"
 
 export PLAYWRIGHT_BROWSERS_PATH="$ROOT_DIR/.playwright"
 
