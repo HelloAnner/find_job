@@ -2,7 +2,6 @@ target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
-config.yaml
 .git-rewrite
 ### IntelliJ IDEA ###
 *.iws
@@ -47,7 +46,6 @@ merge_prs.log
 ### Mac OS ###
 .DS_Store
 cookie.json
-.env
 chromedriver
 *.jpg
 build/
