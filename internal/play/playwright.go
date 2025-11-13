@@ -171,6 +171,22 @@ func (r *Runner) InitStealth() {
 	}
 }
 
+// InitWithBrowserCookies 初始化并注入浏览器cookie
+func (r *Runner) InitWithBrowserCookies(browserCookieFile string) error {
+	if r == nil {
+		return nil
+	}
+
+	loader := NewBrowserCookieLoader(browserCookieFile, true)
+	if err := loader.LoadBrowserCookies(r.page); err != nil {
+		return fmt.Errorf("初始化浏览器cookie失败: %w", err)
+	}
+
+	// 同时初始化反检测
+	r.InitStealth()
+	return nil
+}
+
 func ensurePlaywrightCache() {
 	if val := os.Getenv("PLAYWRIGHT_BROWSERS_PATH"); val != "" {
 		return

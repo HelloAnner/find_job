@@ -20,17 +20,37 @@
 
 > **目标**：提供一个只包含 2 个容器（`boss` + `playwright`）的部署方式，避免在服务器上额外下载浏览器或 Playwright Driver，默认全程无头运行。
 
+### 跨平台兼容性
+
+项目支持跨平台 Docker 部署，自动检测当前平台并构建对应架构的镜像：
+
+- **支持平台**: Linux (amd64/arm64), macOS (Intel/Apple Silicon)
+- **自动检测**: `start.sh` 脚本会自动检测当前平台并构建对应架构的镜像
+- **驱动适配**: Playwright 驱动会根据平台自动下载对应的版本
+
+### 部署步骤
+
 1. 准备配置：
    - `config.yaml`、`.env` 以及 `data/boss/cookie.json`（本地扫码登录后拷贝到服务器，缺失或失效时容器会立即退出）。
    - 所有文件都放在仓库根目录，`data/` 目录会被 bind mount 用于持久化黑名单、Cookie、统计信息等。
-2. 构建镜像（首次或 Playwright 版本升级时执行）：
+2. 使用启动脚本（推荐）：
+
+   ```bash
+   ./start.sh
+   ```
+
+   - 脚本会自动检测平台并构建对应架构的镜像
+   - `playwright` 服务会根据平台下载对应的驱动包
+   - 整个过程完全自动化，无需手动指定平台参数
+
+3. 手动构建（可选）：
 
    ```bash
    docker compose build
    ```
 
    - `playwright` 服务基于官方 `mcr.microsoft.com/playwright` 镜像下载指定版本的 Playwright Driver（默认 `1.52.0`），并把浏览器/Driver 复制到命名卷中，整个过程只发生一次。
-3. 启动：
+4. 启动：
 
    ```bash
    docker compose up -d
@@ -180,8 +200,12 @@ export PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 ## 常见问题
 
 1. **启动报错 `please install the driver first`**：说明 `.playwright/` 目录缺失；请重新执行 `./scripts/start.sh` 或 `./scripts/package.sh`，或确保 release 包完整解压。
-2. **需要更新配置/黑名单**：继续编辑根目录下的 `config.yaml`／`data/boss/data.json`，与原 Java 项目保持一致（Java 版本仍使用 `src/main/java/boss/data.json`）。
-3. **AI 401/403/404 错误**：检查 `.env` 中的 `BASE_URL`、`API_KEY`、`MODEL`；如使用非官方 OpenAI 兼容接口（火山引擎、DeepSeek 等），可额外设置 `BASE_PATH`（默认自动根据 `BASE_URL` 推断：若以 `/api/v3` 结尾则补全 `/chat/completions`，否则使用 `/v1/chat/completions`）或直接设置 `BASE_ENDPOINT`（完整 URL）。例如：
+2. **跨平台 Docker 构建问题**：
+   - 确保使用 `./start.sh` 而非直接 `docker compose build`，脚本会自动检测平台
+   - 如果遇到平台不支持错误，请检查系统架构是否在支持列表中
+   - 支持平台：Linux (amd64/arm64), macOS (Intel/Apple Silicon)
+3. **需要更新配置/黑名单**：继续编辑根目录下的 `config.yaml`／`data/boss/data.json`，与原 Java 项目保持一致（Java 版本仍使用 `src/main/java/boss/data.json`）。
+4. **AI 401/403/404 错误**：检查 `.env` 中的 `BASE_URL`、`API_KEY`、`MODEL`；如使用非官方 OpenAI 兼容接口（火山引擎、DeepSeek 等），可额外设置 `BASE_PATH`（默认自动根据 `BASE_URL` 推断：若以 `/api/v3` 结尾则补全 `/chat/completions`，否则使用 `/v1/chat/completions`）或直接设置 `BASE_ENDPOINT`（完整 URL）。例如：
    ```env
    BASE_URL=https://ark.cn-beijing.volces.com/api/v3
    BASE_PATH=/chat/completions

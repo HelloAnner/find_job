@@ -1,8 +1,14 @@
 # syntax=docker/dockerfile:1.7
+# 支持多平台构建
 ARG PLAYWRIGHT_VERSION=1.52.0
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+
 FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-jammy
 
 ARG PLAYWRIGHT_VERSION
+ARG TARGETOS
+ARG TARGETARCH
 ENV PLAYWRIGHT_VERSION=${PLAYWRIGHT_VERSION}
 
 RUN apt-get update && \
@@ -12,7 +18,19 @@ RUN apt-get update && \
 RUN set -eux; \
     DRIVER_DIR="/opt/ms-playwright-go/${PLAYWRIGHT_VERSION}"; \
     mkdir -p "${DRIVER_DIR}"; \
-    curl -fsSL "https://playwright.azureedge.net/builds/driver/playwright-${PLAYWRIGHT_VERSION}-linux.zip" -o /tmp/driver.zip; \
+    # 根据平台选择合适的驱动包
+    if [ "${TARGETOS}" = "linux" ]; then \
+        curl -fsSL "https://playwright.azureedge.net/builds/driver/playwright-${PLAYWRIGHT_VERSION}-linux.zip" -o /tmp/driver.zip; \
+    elif [ "${TARGETOS}" = "darwin" ]; then \
+        if [ "${TARGETARCH}" = "arm64" ]; then \
+            curl -fsSL "https://playwright.azureedge.net/builds/driver/playwright-${PLAYWRIGHT_VERSION}-mac-arm64.zip" -o /tmp/driver.zip; \
+        else \
+            curl -fsSL "https://playwright.azureedge.net/builds/driver/playwright-${PLAYWRIGHT_VERSION}-mac.zip" -o /tmp/driver.zip; \
+        fi; \
+    else \
+        echo "Unsupported platform: ${TARGETOS}-${TARGETARCH}" >&2; \
+        exit 1; \
+    fi; \
     unzip /tmp/driver.zip -d "${DRIVER_DIR}"; \
     rm /tmp/driver.zip; \
     chmod +x "${DRIVER_DIR}/node"

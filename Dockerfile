@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1.7
+# 支持多平台构建
 ARG GO_VERSION=1.22
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+
 FROM golang:${GO_VERSION}-bookworm AS builder
 
 WORKDIR /src
@@ -8,7 +12,7 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/boss ./
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/boss ./
 
 FROM debian:bookworm-slim AS runner
 ENV PLAYWRIGHT_BROWSERS_PATH=/playwright/browsers \

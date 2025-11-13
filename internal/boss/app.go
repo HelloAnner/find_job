@@ -41,16 +41,17 @@ type App struct {
 	runner *play.Runner
 	black  *Blacklists
 
-	results    []Job
-	startTime  time.Time
-	dataFile   string
-	cookieFile string
-	statsFile  string
-	stats      *DailyCounter
-	maxChats   int
-	aiReady    chan error
-	aiOnce     sync.Once
-	aiReadyErr error
+	results          []Job
+	startTime        time.Time
+	dataFile         string
+	cookieFile       string
+	browserCookieFile string
+	statsFile        string
+	stats            *DailyCounter
+	maxChats         int
+	aiReady          chan error
+	aiOnce           sync.Once
+	aiReadyErr       error
 }
 
 type DailyCounter struct {
@@ -84,7 +85,17 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 
 	dataFile := config.ResolvePath(dataPath)
 	cookieFile := config.ResolvePath(cookiePath)
+	browserCookieFile := config.ResolvePath("data/boss/browser_cookie.json")
 	statsFile := config.ResolvePath(statsPath)
+
+	// 如果存在浏览器cookie文件，初始化时注入
+	if utils.BrowserCookieFileExists(browserCookieFile) {
+		if err := runner.InitWithBrowserCookies(browserCookieFile); err != nil {
+			log.Printf("[boss] 初始化浏览器cookie失败: %v", err)
+		} else {
+			log.Println("[boss] 浏览器cookie初始化完成")
+		}
+	}
 
 	if err := utils.EnsureFile(dataFile, []byte(`{"blackCompanies":[],"blackRecruiters":[],"blackJobs":[]}`)); err != nil {
 		runner.Close()
@@ -108,17 +119,18 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 	}
 
 	app := &App{
-		cfg:        &cfg.Boss,
-		aiCfg:      cfg.AI,
-		bot:        bot.New(cfg.Bot, env),
-		ai:         aiClient,
-		runner:     runner,
-		black:      black,
-		dataFile:   dataFile,
-		cookieFile: cookieFile,
-		statsFile:  statsFile,
-		stats:      stats,
-		maxChats:   cfg.Boss.MaxChat,
+		cfg:              &cfg.Boss,
+		aiCfg:            cfg.AI,
+		bot:              bot.New(cfg.Bot, env),
+		ai:               aiClient,
+		runner:           runner,
+		black:            black,
+		dataFile:         dataFile,
+		cookieFile:       cookieFile,
+		browserCookieFile: browserCookieFile,
+		statsFile:        statsFile,
+		stats:            stats,
+		maxChats:         cfg.Boss.MaxChat,
 	}
 	if cfg.Boss.EnableAI && aiClient != nil {
 		app.aiReady = make(chan error, 1)
@@ -276,11 +288,21 @@ func (a *App) buildSearchURL(city string) string {
 // will be implemented in the next iteration to achieve feature parity with the Java version.
 
 func (a *App) login(page playwright.Page) error {
-	if !a.cfg.OpenWindowsEnabled() {
-		if !a.hasCookieData() {
-			return errors.New("检测不到历史Cookie，在服务器无头模式下无法发起登录，请先在本地写入 data/boss/cookie.json")
+	// 优先尝试加载浏览器cookie
+	if a.hasBrowserCookieData() {
+		log.Println("[boss] 检测到浏览器Cookie文件，尝试加载…")
+		if err := a.loadBrowserCookies(page); err != nil {
+			log.Printf("[boss] 加载浏览器cookie失败: %v", err)
+		} else {
+			log.Println("[boss] 浏览器Cookie加载完成")
 		}
-	} else if !a.hasCookieData() {
+	}
+
+	if !a.cfg.OpenWindowsEnabled() {
+		if !a.hasCookieData() && !a.hasBrowserCookieData() {
+			return errors.New("检测不到历史Cookie，在服务器无头模式下无法发起登录，请先在本地写入 data/boss/cookie.json 或 data/boss/browser_cookie.json")
+		}
+	} else if !a.hasCookieData() && !a.hasBrowserCookieData() {
 		log.Println("[boss] 未检测到Cookie，准备弹出浏览器完成首次登录…")
 		if err := a.loginWithVisibleWindow(); err != nil {
 			return err
@@ -390,6 +412,17 @@ func (a *App) hasCookieData() bool {
 	}
 	trimmed := strings.TrimSpace(string(data))
 	return trimmed != "" && trimmed != "[]"
+}
+
+// hasBrowserCookieData 检查是否存在浏览器cookie文件
+func (a *App) hasBrowserCookieData() bool {
+	return utils.BrowserCookieFileExists(a.browserCookieFile)
+}
+
+// loadBrowserCookies 加载浏览器cookie
+func (a *App) loadBrowserCookies(page playwright.Page) error {
+	loader := play.NewBrowserCookieLoader(a.browserCookieFile, true)
+	return loader.LoadBrowserCookies(page)
 }
 
 func (a *App) postJobByCity(page playwright.Page, city string) error {
