@@ -8,7 +8,6 @@ target/
 *.iml
 *.ipr
 .idea
-*.sh
 CLAUDE.md
 .claude
 nul
