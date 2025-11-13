@@ -1,32 +1,38 @@
-# syntax=docker/dockerfile:1.7
-# 支持多平台构建
-ARG GO_VERSION=1.22
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
-
-FROM golang:${GO_VERSION}-bookworm AS builder
+# 单镜像架构 - 集成Go应用和Playwright环境
+FROM golang:1.25.3-alpine AS builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
+RUN go mod download
 
 COPY . .
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/boss ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/boss ./
 
-FROM debian:bookworm-slim AS runner
-ENV PLAYWRIGHT_BROWSERS_PATH=/playwright/browsers \
-    PLAYWRIGHT_DRIVER_PATH=/playwright/driver
+# 运行时阶段 - 集成Playwright环境
+FROM node:18-alpine
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates bash tzdata && \
-    rm -rf /var/lib/apt/lists/*
+# 设置环境变量
+ENV PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0 \
+    PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright \
+    PLAYWRIGHT_DRIVER_PATH=/usr/local/lib/node_modules/playwright
+
+# 安装系统依赖和Playwright
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    && npm install -g playwright@1.52.0 \
+    && npx playwright install chromium
 
 WORKDIR /app
 COPY --from=builder /out/boss /app/boss
 COPY assets ./assets
 COPY config.yaml ./config.yaml
-COPY scripts ./scripts
 
 RUN mkdir -p /app/data/boss
 COPY docker/boss-entrypoint.sh /usr/local/bin/boss-entrypoint.sh

@@ -17,7 +17,7 @@ boss:
   filterDeadHR: true # 过滤不活跃HR
   enableAI: true # 开启AI检测与自动生成打招呼语
   interval: 1
-  max: 100 # 每日最大投递次数
+  max: 10 # 每日最大投递次数
   sendImgResume: false # 是否发送图片简历
   deadStatus: [ "2周内活跃","本月活跃" ] # 只投递近期活跃的HR，提高效率
 

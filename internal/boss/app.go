@@ -85,7 +85,7 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 
 	dataFile := config.ResolvePath(dataPath)
 	cookieFile := config.ResolvePath(cookiePath)
-	browserCookieFile := config.ResolvePath("data/boss/browser_cookie.json")
+	browserCookieFile := config.ResolvePath("data/boss/browser_cookie.txt")
 	statsFile := config.ResolvePath(statsPath)
 
 	// 如果存在浏览器cookie文件，初始化时注入
