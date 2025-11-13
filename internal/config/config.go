@@ -90,7 +90,7 @@ func (b *BossConfig) normalize() error {
 		b.OpenWindows = b.ShowWindows
 	}
 	if b.OpenWindows == nil {
-		defaultOpen := true
+		defaultOpen := false
 		b.OpenWindows = &defaultOpen
 	}
 

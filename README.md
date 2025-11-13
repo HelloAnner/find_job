@@ -8,13 +8,54 @@
 - `config.yaml`、`.env`：与原项目相同的配置
 - `config.yaml` 中新增 `boss.max`（默认 100），用于限制每日自动打招呼次数；计数保存在 `data/boss/stats.json`，每天自动重置。
 - `config.yaml` 中新增 `boss.interval`（默认 1），单位小时。程序会无限循环执行：运行一次 -> 等待 `interval` 小时 -> 再执行。
-- `config.yaml` 中新增 `boss.openWindows` / `boss.showWindows`（默认 true），为 false 时 Playwright 采用无头模式运行。若该模式下检测到 Cookie 失效，会自动临时弹出浏览器完成扫码登录，随后继续无头流程。
+- `config.yaml` 中新增 `boss.openWindows` / `boss.showWindows`（Docker 默认 false），为 false 时 Playwright 采用无头模式运行；当前模式下如果 Cookie 缺失或失效会直接退出启动，避免在服务器上等待人工扫码。
 - `bot.is_send` 控制企业微信推送开关；`bot.template` 支持使用 `{{变量名}}` 占位符自定义推送内容（详见“企业微信通知模板”）。
 - `assets/`：静态资源（例如 `assets/boss/city-industry-code.json`、`assets/resume.jpg`）
 - `data/`：运行期产生的黑名单、Cookie 等数据（默认 `data/boss/data.json`、`data/boss/cookie.json`）
 - 项目根目录包含默认配置文件模板（`config.yaml`、`.env`），用于开发和打包参考。
 
 > **提示**：项目根目录的 `config.yaml`、`.env` 是默认模板配置；实际运行时请在仓库根目录准备真实的 `config.yaml` 和 `.env`（不会被 Git 跟踪），`./scripts/start.sh` 会将真实配置复制到 `build/` 环境中。
+
+## Docker 部署（服务器推荐）
+
+> **目标**：提供一个只包含 2 个容器（`boss` + `playwright`）的部署方式，避免在服务器上额外下载浏览器或 Playwright Driver，默认全程无头运行。
+
+1. 准备配置：
+   - `config.yaml`、`.env` 以及 `data/boss/cookie.json`（本地扫码登录后拷贝到服务器，缺失或失效时容器会立即退出）。
+   - 所有文件都放在仓库根目录，`data/` 目录会被 bind mount 用于持久化黑名单、Cookie、统计信息等。
+2. 构建镜像（首次或 Playwright 版本升级时执行）：
+
+   ```bash
+   docker compose build
+   ```
+
+   - `playwright` 服务基于官方 `mcr.microsoft.com/playwright` 镜像下载指定版本的 Playwright Driver（默认 `1.52.0`），并把浏览器/Driver 复制到命名卷中，整个过程只发生一次。
+3. 启动：
+
+   ```bash
+   docker compose up -d
+   ```
+
+   - `boss` 服务会自动挂载 `config.yaml`、`.env`、`data/` 以及来自 `playwright` 服务的浏览器缓存；只要检测到未登录，它会立即报错退出以避免服务器阻塞。
+4. 查看日志 / 维护：
+
+   ```bash
+   docker compose logs -f boss
+   docker compose restart boss   # 更新配置或 Cookie 后重启
+   docker compose build playwright --no-cache  # 刷新 Playwright 版本
+   ```
+
+### 目录 & 卷对照
+
+| 资源 | 说明 |
+| --- | --- |
+| `./config.yaml` | 映射到 `/app/config.yaml`，用于运行期配置 |
+| `./.env` | 映射到 `/app/.env`，包含 LLM/Base URL 等敏感信息 |
+| `./data` | 映射到 `/app/data`，持久化黑名单、Cookie、统计数据 |
+| `playwright-browsers` 卷 | 由 `playwright` 容器写入，`boss` 以只读方式挂载到 `/playwright/browsers` |
+| `playwright-driver` 卷 | 由 `playwright` 容器写入，`boss` 以只读方式挂载到 `/playwright/driver` |
+
+> 🎯 若需要升级 Playwright 版本，只需修改 `docker-compose.yml` 和 `docker/playwright/Dockerfile` 中的 `PLAYWRIGHT_VERSION`，然后 `docker compose build --no-cache playwright`。
 
 ## 运行方式
 
@@ -50,6 +91,8 @@
    每个 zip 中都包含 `boss`/`boss.exe`、`scripts/start.sh`、`.playwright/` 及运行所需配置（其中 `config.yaml`、`.env` 来自项目根目录的模板文件），解压后可直接运行；二进制会自动检测同级 `.playwright/` 并设置 `PLAYWRIGHT_BROWSERS_PATH`，双击 `boss.exe` 即可弹出浏览器窗口。
 
 ## Playwright 浏览器安装指引
+
+> 仅用于本地调试/裸机运行。如果采用文首的 Docker Compose 部署，容器会自动内置浏览器与 Driver，无需执行本节命令。
 
 > **前提**：请先安装 [Node.js LTS](https://nodejs.org/)。安装完成后即可使用 `npx` 命令。
 

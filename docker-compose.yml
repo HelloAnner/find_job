@@ -1,0 +1,40 @@
+services:
+  playwright:
+    build:
+      context: .
+      dockerfile: docker/playwright/Dockerfile
+      args:
+        PLAYWRIGHT_VERSION: "1.52.0"
+    container_name: boss-playwright
+    restart: unless-stopped
+    volumes:
+      - playwright-browsers:/srv/playwright/browsers
+      - playwright-driver:/srv/playwright/driver
+    healthcheck:
+      test: ["CMD", "test", "-f", "/srv/playwright/driver/node"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  boss:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: boss-runner
+    depends_on:
+      playwright:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      PLAYWRIGHT_BROWSERS_PATH: /playwright/browsers
+      PLAYWRIGHT_DRIVER_PATH: /playwright/driver
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./.env:/app/.env:ro
+      - ./data:/app/data
+      - playwright-browsers:/playwright/browsers:ro
+      - playwright-driver:/playwright/driver:ro
+
+volumes:
+  playwright-browsers:
+  playwright-driver:

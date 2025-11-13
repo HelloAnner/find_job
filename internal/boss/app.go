@@ -276,8 +276,12 @@ func (a *App) buildSearchURL(city string) string {
 // will be implemented in the next iteration to achieve feature parity with the Java version.
 
 func (a *App) login(page playwright.Page) error {
-	if !a.cfg.OpenWindowsEnabled() && !a.hasCookieData() {
-		log.Println("[boss] 未检测到Cookie，准备临时弹出浏览器完成首次登录…")
+	if !a.cfg.OpenWindowsEnabled() {
+		if !a.hasCookieData() {
+			return errors.New("检测不到历史Cookie，在服务器无头模式下无法发起登录，请先在本地写入 data/boss/cookie.json")
+		}
+	} else if !a.hasCookieData() {
+		log.Println("[boss] 未检测到Cookie，准备弹出浏览器完成首次登录…")
 		if err := a.loginWithVisibleWindow(); err != nil {
 			return err
 		}
@@ -311,15 +315,7 @@ func (a *App) login(page playwright.Page) error {
 	}
 	if required {
 		if !a.cfg.OpenWindowsEnabled() {
-			log.Println("[boss] cookie失效，当前为无头模式，将临时弹出窗口完成扫码登录…")
-			if err := a.loginWithVisibleWindow(); err != nil {
-				return err
-			}
-			if err := a.reloadHeadlessSession(page); err != nil {
-				return err
-			}
-			log.Println("[boss] 登录已完成，继续无头执行…")
-			return nil
+			return errors.New("检测到登录状态失效，在无头模式下不会自动弹窗，请重新生成 cookies")
 		}
 		log.Println("[boss] cookie失效，尝试扫码登录…")
 		if err := a.scanLogin(page); err != nil {
