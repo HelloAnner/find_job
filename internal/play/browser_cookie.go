@@ -50,7 +50,7 @@ func (l *BrowserCookieLoader) LoadBrowserCookies(page playwright.Page) error {
 
 	log.Printf("[browser-cookie] 成功解析 %d 个浏览器cookie", len(browserCookies))
 
-	// 构建Cookie请求头
+	// 构建Cookie请求头，供回退方案使用
 	cookieHeader := utils.BuildCookieHeader(browserCookies)
 	if cookieHeader == "" {
 		log.Printf("[browser-cookie] 无有效的浏览器cookie")
@@ -58,7 +58,7 @@ func (l *BrowserCookieLoader) LoadBrowserCookies(page playwright.Page) error {
 	}
 
 	// 注入cookie到页面
-	if err := l.injectCookiesToPage(page, cookieHeader); err != nil {
+	if err := l.injectCookiesToPage(page, browserCookies, cookieHeader); err != nil {
 		return fmt.Errorf("注入浏览器cookie到页面失败: %w", err)
 	}
 
@@ -67,9 +67,74 @@ func (l *BrowserCookieLoader) LoadBrowserCookies(page playwright.Page) error {
 }
 
 // injectCookiesToPage 将浏览器cookie注入到Playwright页面
-func (l *BrowserCookieLoader) injectCookiesToPage(page playwright.Page, cookieHeader string) error {
-	// 通过JavaScript注入cookie
+func (l *BrowserCookieLoader) injectCookiesToPage(page playwright.Page, cookies []*utils.BrowserCookie, cookieHeader string) error {
+	if err := l.injectCookiesViaContext(page, cookies); err == nil {
+		return nil
+	} else {
+		log.Printf("[browser-cookie] 通过BrowserContext注入cookie失败: %v，尝试JS注入", err)
+	}
 	return l.injectCookiesViaJS(page, cookieHeader)
+}
+
+// injectCookiesViaContext 通过BrowserContext.AddCookies注入cookie
+func (l *BrowserCookieLoader) injectCookiesViaContext(page playwright.Page, cookies []*utils.BrowserCookie) error {
+	if page == nil {
+		return fmt.Errorf("page is nil")
+	}
+	context := page.Context()
+	if context == nil {
+		return fmt.Errorf("page context is nil")
+	}
+
+	var pwCookies []playwright.OptionalCookie
+	for _, cookie := range cookies {
+		if cookie == nil || cookie.Name == "" {
+			continue
+		}
+
+		domain := strings.TrimSpace(cookie.Domain)
+		if domain == "" {
+			domain = ".zhipin.com"
+		}
+		path := strings.TrimSpace(cookie.Path)
+		if path == "" {
+			path = "/"
+		}
+
+		pwCookie := playwright.OptionalCookie{
+			Name:   cookie.Name,
+			Value:  cookie.Value,
+			Domain: playwright.String(domain),
+			Path:   playwright.String(path),
+		}
+
+		if !cookie.Expires.IsZero() {
+			expires := float64(cookie.Expires.Unix())
+			pwCookie.Expires = &expires
+		}
+		if cookie.HttpOnly {
+			pwCookie.HttpOnly = playwright.Bool(true)
+		}
+		if cookie.Secure {
+			pwCookie.Secure = playwright.Bool(true)
+		}
+		if attr := normalizeSameSite(cookie.SameSite); attr != nil {
+			pwCookie.SameSite = attr
+		}
+
+		pwCookies = append(pwCookies, pwCookie)
+	}
+
+	if len(pwCookies) == 0 {
+		return fmt.Errorf("no valid cookies to inject")
+	}
+
+	if err := context.AddCookies(pwCookies); err != nil {
+		return fmt.Errorf("AddCookies failed: %w", err)
+	}
+
+	log.Printf("[browser-cookie] 已通过BrowserContext.AddCookies注入 %d 条cookie", len(pwCookies))
+	return nil
 }
 
 // injectCookiesViaJS 通过JavaScript注入cookie
@@ -109,6 +174,19 @@ func (l *BrowserCookieLoader) injectCookiesViaJS(page playwright.Page, cookieHea
 
 	log.Printf("[browser-cookie] 已通过JavaScript注入cookie")
 	return nil
+}
+
+func normalizeSameSite(raw string) *playwright.SameSiteAttribute {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "strict":
+		return playwright.SameSiteAttributeStrict
+	case "lax":
+		return playwright.SameSiteAttributeLax
+	case "none":
+		return playwright.SameSiteAttributeNone
+	default:
+		return nil
+	}
 }
 
 // CreateBrowserCookieScript 创建浏览器cookie注入脚本

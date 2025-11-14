@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,7 +27,7 @@ type BrowserCookie struct {
 // BrowserCookieConfig 浏览器cookie配置
 type BrowserCookieConfig struct {
 	FilePath string `json:"filePath"` // 浏览器cookie文件路径
-	Enabled  bool   `json:"enabled"`   // 是否启用浏览器cookie
+	Enabled  bool   `json:"enabled"`  // 是否启用浏览器cookie
 }
 
 // ParseBrowserCookies 解析浏览器导出的cookie文件
@@ -92,10 +93,12 @@ func parseNetscapeCookies(content string) ([]*BrowserCookie, error) {
 		name := fields[5]
 		value := fields[6]
 
-		// 解析过期时间
+		// 解析过期时间（优先按 Unix 时间，其次 RFC1123）
 		var expires time.Time
 		if expiresStr != "0" && expiresStr != "" {
-			if timestamp, err := time.Parse(time.RFC1123, expiresStr); err == nil {
+			if ts, err := strconv.ParseInt(expiresStr, 10, 64); err == nil {
+				expires = time.Unix(ts, 0)
+			} else if timestamp, err := time.Parse(time.RFC1123, expiresStr); err == nil {
 				expires = timestamp
 			}
 		}
