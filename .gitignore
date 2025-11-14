@@ -54,3 +54,7 @@ chromedriver
 build/
 dist/
 .gocache/
+
+data/boss/sent_jobs.json
+
+data/boss/stats.json

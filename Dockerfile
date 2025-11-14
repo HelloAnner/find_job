@@ -1,8 +1,14 @@
 # 单镜像架构 - 集成Go应用和Playwright环境
 FROM golang:1.25.3 AS builder
 
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
+
 WORKDIR /src
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN echo 'deb https://mirrors.aliyun.com/debian/ trixie main contrib non-free non-free-firmware' > /etc/apt/sources.list \
+    && echo 'deb https://mirrors.aliyun.com/debian/ trixie-updates main contrib non-free non-free-firmware' >> /etc/apt/sources.list \
+    && echo 'deb https://mirrors.aliyun.com/debian-security trixie-security main contrib non-free non-free-firmware' >> /etc/apt/sources.list \
+    && apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -26,7 +32,10 @@ ENV PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true \
     PLAYWRIGHT_DRIVER_PATH=/opt/playwright/driver
 
 # 安装 Playwright 运行所需的系统依赖
-RUN apt-get update \
+RUN echo 'deb https://mirrors.aliyun.com/debian/ bookworm main contrib non-free non-free-firmware' > /etc/apt/sources.list \
+    && echo 'deb https://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free non-free-firmware' >> /etc/apt/sources.list \
+    && echo 'deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware' >> /etc/apt/sources.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         fonts-liberation \
@@ -64,6 +73,7 @@ RUN mkdir -p /app/data/boss
 COPY docker/boss-entrypoint.sh /usr/local/bin/boss-entrypoint.sh
 RUN chmod +x /usr/local/bin/boss-entrypoint.sh
 
+# 数据目录仍可通过宿主机挂载覆盖
 VOLUME ["/app/data"]
 ENTRYPOINT ["boss-entrypoint.sh"]
 CMD ["/app/boss"]

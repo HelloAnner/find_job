@@ -25,11 +25,12 @@ import (
 )
 
 const (
-	homeURL    = "https://www.zhipin.com"
-	baseURL    = "https://www.zhipin.com/web/geek/job"
-	dataPath   = "data/boss/data.json"
-	cookiePath = "data/boss/cookie.json"
-	statsPath  = "data/boss/stats.json"
+	homeURL      = "https://www.zhipin.com"
+	baseURL      = "https://www.zhipin.com/web/geek/job"
+	dataPath     = "data/boss/data.json"
+	cookiePath   = "data/boss/cookie.json"
+	statsPath    = "data/boss/stats.json"
+	sentJobsPath = "data/boss/sent_jobs.json"
 )
 
 // App is the Go port of the original Java Boss logic.
@@ -49,6 +50,8 @@ type App struct {
 	statsFile         string
 	stats             *DailyCounter
 	maxChats          int
+	sentJobsFile      string
+	sentJobs          map[string]string
 	aiReady           chan error
 	aiOnce            sync.Once
 	aiReadyErr        error
@@ -87,6 +90,7 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 	cookieFile := config.ResolvePath(cookiePath)
 	browserCookieFile := config.ResolvePath("data/boss/browser_cookie.txt")
 	statsFile := config.ResolvePath(statsPath)
+	sentJobsFile := config.ResolvePath(sentJobsPath)
 
 	// 如果存在浏览器cookie文件，初始化时注入
 	if utils.BrowserCookieFileExists(browserCookieFile) {
@@ -105,6 +109,10 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 		runner.Close()
 		return nil, err
 	}
+	if err := utils.EnsureFile(sentJobsFile, []byte(`{"jobs":{}}`)); err != nil {
+		runner.Close()
+		return nil, err
+	}
 
 	black, err := loadBlacklists(dataFile)
 	if err != nil {
@@ -116,6 +124,11 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 	if err != nil {
 		log.Printf("[boss] 读取投递计数失败: %v", err)
 		stats = newDailyCounter()
+	}
+	sentJobs, err := loadSentJobs(sentJobsFile)
+	if err != nil {
+		log.Printf("[boss] 读取已投递岗位失败: %v", err)
+		sentJobs = map[string]string{}
 	}
 
 	app := &App{
@@ -131,6 +144,8 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 		statsFile:         statsFile,
 		stats:             stats,
 		maxChats:          cfg.Boss.MaxChat,
+		sentJobsFile:      sentJobsFile,
+		sentJobs:          sentJobs,
 	}
 	if cfg.Boss.EnableAI && aiClient != nil {
 		app.aiReady = make(chan error, 1)
@@ -464,6 +479,7 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 
 		count, err := cards.Count()
 		if err != nil {
+			log.Printf("[boss] 读取岗位列表失败: %v | keyword=%s | page=%s", err, keyword, pageURL(page))
 			return err
 		}
 		postCount := 0
@@ -473,17 +489,37 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 				return nil
 			}
 			cards = page.Locator(jobCardSelector)
+			currentCount, err := cards.Count()
+			if err != nil {
+				log.Printf("[boss] 刷新岗位列表失败: %v | keyword=%s | page=%s", err, keyword, pageURL(page))
+				return err
+			}
+			if i >= currentCount {
+				log.Printf("[boss] 岗位索引超出当前可见范围，终止本关键词：index=%d count=%d | keyword=%s", i, currentCount, keyword)
+				break
+			}
 			card := cards.Nth(i)
+			cardDesc := describeJobCard(card)
+			if err := card.ScrollIntoViewIfNeeded(); err != nil {
+				log.Printf("[boss] 滚动岗位卡片失败: %v | %s", err, cardDesc)
+			}
 			if err := card.Click(playwright.LocatorClickOptions{
-				Timeout: playwright.Float(5000),
+				Timeout: playwright.Float(3000),
 			}); err != nil {
-				log.Printf("[boss] 点击岗位卡片失败: %v | 卡片信息: %s", err, describeJobCard(card))
-				continue
+				log.Printf("[boss] 点击岗位卡片失败: %v | %s | page=%s", err, cardDesc, pageURL(page))
+				if err := card.Click(playwright.LocatorClickOptions{
+					Force:   playwright.Bool(true),
+					Timeout: playwright.Float(2000),
+				}); err != nil {
+					log.Printf("[boss] 强制点击岗位卡片仍失败: %v | %s", err, cardDesc)
+					continue
+				}
 			}
 			sleepRandom(500, 900)
 
 			detail := page.Locator(jobDetailBox)
 			if err := detail.WaitFor(playwright.LocatorWaitForOptions{Timeout: playwright.Float(4000)}); err != nil {
+				log.Printf("[boss] 岗位详情面板未出现: %v | %s | page=%s", err, cardDesc, pageURL(page))
 				continue
 			}
 			detail = detail.Nth(0)
@@ -514,14 +550,17 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 				CompanyName: companyName,
 				Recruiter:   bossName,
 			}
+			if a.isJobSent(&job) {
+				log.Printf("[boss] 岗位已投递过，自动跳过：%s | %s", job.JobName, job.Href)
+				continue
+			}
 
 			if !a.jobMatchesProfile(keyword, job) {
 				log.Printf("[boss] 职位[%s] 与个人介绍不匹配，自动跳过", job.JobName)
 				continue
 			}
 
-			_, err := a.resumeSubmission(page, keyword, &job)
-			if err != nil {
+			if _, err = a.resumeSubmission(page, keyword, &job); err != nil {
 				log.Printf("[boss] 投递岗位失败: %v", err)
 			}
 			postCount++
@@ -589,9 +628,14 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	}
 	chatPage := detailPage
 	popup, err := detailPage.Context().ExpectPage(func() error {
-		return chatBtn.Nth(0).Click()
+		if err := chatBtn.Nth(0).Click(); err != nil {
+			log.Printf("[boss] 点击“立即沟通”失败: %v | url=%s", err, detailURL)
+			return err
+		}
+		return nil
 	}, playwright.BrowserContextExpectPageOptions{Timeout: playwright.Float(2000)})
 	if err != nil && !errors.Is(err, playwright.ErrTimeout) {
+		log.Printf("[boss] 监听聊天弹窗失败: %v | detail=%s", err, detailURL)
 		return false, err
 	}
 	if popup != nil {
@@ -604,10 +648,11 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	chatPage, inputLocator, ready, clicked := a.waitForChatInput(chatPage, &extraPages)
 	if !ready {
 		if clicked {
-			log.Printf("[boss] 已点击“继续沟通”，不等待聊天窗口，视为成功：%s", job.JobName)
+			log.Printf("[boss] 已点击“继续沟通”，不等待聊天窗口，视为成功：%s | page=%s", job.JobName, pageURL(chatPage))
 			a.results = append(a.results, *job)
 			a.incrementDailyCount()
 			a.notifyJobSuccess(job, message)
+			a.markJobSent(job)
 			return true, nil
 		}
 		log.Printf("[boss] 聊天输入框未出现，跳过岗位:%s", job.JobName)
@@ -626,10 +671,12 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	tagName, _ := tagNameRaw.(string)
 	if strings.EqualFold(tagName, "textarea") {
 		if err := input.Fill(message); err != nil {
+			log.Printf("[boss] 填写打招呼内容失败: %v | job=%s | page=%s", err, job.JobName, pageURL(chatPage))
 			return false, err
 		}
 	} else {
 		if _, err := input.Evaluate("(el, msg) => el.innerText = msg", message); err != nil {
+			log.Printf("[boss] 注入打招呼内容失败: %v | job=%s | page=%s", err, job.JobName, pageURL(chatPage))
 			return false, err
 		}
 	}
@@ -641,6 +688,8 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 			if count, err := uploader.Count(); err == nil && count > 0 {
 				if err := uploader.Nth(0).SetInputFiles(resumePath); err == nil {
 					imgResume = true
+				} else {
+					log.Printf("[boss] 上传图片简历失败: %v | job=%s | page=%s", err, job.JobName, pageURL(chatPage))
 				}
 			}
 		}
@@ -652,7 +701,13 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 		if err := sendBtn.Nth(0).Click(); err == nil {
 			sleepRandom(500, 900)
 			sendSuccess = true
+		} else {
+			log.Printf("[boss] 点击发送按钮失败: %v | job=%s | page=%s", err, job.JobName, pageURL(chatPage))
 		}
+	} else if err != nil {
+		log.Printf("[boss] 检测发送按钮失败: %v | job=%s | page=%s", err, job.JobName, pageURL(chatPage))
+	} else {
+		log.Printf("[boss] 未找到发送按钮 | job=%s | page=%s", job.JobName, pageURL(chatPage))
 	}
 	if !sendSuccess {
 		log.Printf("[boss] 未找到发送按钮，自动跳过！岗位：%s", job.JobName)
@@ -663,6 +718,7 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 		a.results = append(a.results, *job)
 		a.incrementDailyCount()
 		a.notifyJobSuccess(job, message)
+		a.markJobSent(job)
 	}
 	return sendSuccess, nil
 }
@@ -749,7 +805,9 @@ func (a *App) clickContinueChat(page playwright.Page) (playwright.Page, bool) {
 			}
 
 			before := ctx.Pages()
-			if err := btn.Click(); err != nil {
+			if err := btn.Click(playwright.LocatorClickOptions{
+				Timeout: playwright.Float(5000),
+			}); err != nil {
 				if handled := a.forceClick(btn, err); !handled {
 					continue
 				}
@@ -857,6 +915,86 @@ func truncateForLog(s string, limit int) string {
 		return s
 	}
 	return string(runes[:limit]) + "…"
+}
+
+func pageURL(p playwright.Page) string {
+	if p == nil {
+		return "url=unknown"
+	}
+	if u := p.URL(); u != "" {
+		return u
+	}
+	return "url=unknown"
+}
+
+func loadSentJobs(path string) (map[string]string, error) {
+	data := struct {
+		Jobs map[string]string `json:"jobs"`
+	}{}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return map[string]string{}, nil
+	}
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return nil, err
+	}
+	if data.Jobs == nil {
+		data.Jobs = map[string]string{}
+	}
+	return data.Jobs, nil
+}
+
+func saveSentJobs(path string, jobs map[string]string) error {
+	data := struct {
+		Jobs map[string]string `json:"jobs"`
+	}{Jobs: jobs}
+	buf, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, buf, 0o644)
+}
+
+func (a *App) jobKey(job *Job) string {
+	if job == nil {
+		return ""
+	}
+	if job.Href != "" {
+		return job.Href
+	}
+	return fmt.Sprintf("%s|%s", strings.TrimSpace(job.CompanyName), strings.TrimSpace(job.JobName))
+}
+
+func (a *App) isJobSent(job *Job) bool {
+	if a == nil || a.sentJobs == nil {
+		return false
+	}
+	key := a.jobKey(job)
+	if key == "" {
+		return false
+	}
+	_, ok := a.sentJobs[key]
+	return ok
+}
+
+func (a *App) markJobSent(job *Job) {
+	if a == nil {
+		return
+	}
+	if a.sentJobs == nil {
+		a.sentJobs = map[string]string{}
+	}
+	key := a.jobKey(job)
+	if key == "" {
+		return
+	}
+	a.sentJobs[key] = time.Now().Format(time.RFC3339)
+	if err := saveSentJobs(a.sentJobsFile, a.sentJobs); err != nil {
+		log.Printf("[boss] 保存已投递岗位失败: %v", err)
+	}
 }
 
 func (a *App) updateListData() error {
