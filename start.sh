@@ -60,13 +60,13 @@ build_and_start_single_container() {
   docker build -t get_jobs-boss .
 
   log_info "启动boss应用…"
-  docker run -d \
+  CONTAINER_ID=$(docker run -d \
     --name boss-runner \
     --restart unless-stopped \
     -v "$ROOT_DIR/config.yaml:/app/config.yaml:ro" \
     -v "$ROOT_DIR/.env:/app/.env:ro" \
     -v "$ROOT_DIR/data:/app/data" \
-    get_jobs-boss
+    get_jobs-boss)
 }
 
 monitor_job_success() {
@@ -94,17 +94,9 @@ monitor_job_success() {
 main() {
   cleanup_stack
   ensure_config
+
   build_and_start_single_container
-
-  log_info "等待容器启动…"
-  sleep 10
-
-  monitor_job_success
-
-  log_info "投递任务完成，停止容器…"
-  docker stop boss-runner
-  docker rm boss-runner
-  log_info "✅ 所有任务完成！"
+  printf '%s\n' "$CONTAINER_ID"
 }
 
 main "$@"

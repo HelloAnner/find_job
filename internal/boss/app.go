@@ -41,17 +41,17 @@ type App struct {
 	runner *play.Runner
 	black  *Blacklists
 
-	results          []Job
-	startTime        time.Time
-	dataFile         string
-	cookieFile       string
+	results           []Job
+	startTime         time.Time
+	dataFile          string
+	cookieFile        string
 	browserCookieFile string
-	statsFile        string
-	stats            *DailyCounter
-	maxChats         int
-	aiReady          chan error
-	aiOnce           sync.Once
-	aiReadyErr       error
+	statsFile         string
+	stats             *DailyCounter
+	maxChats          int
+	aiReady           chan error
+	aiOnce            sync.Once
+	aiReadyErr        error
 }
 
 type DailyCounter struct {
@@ -119,18 +119,18 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 	}
 
 	app := &App{
-		cfg:              &cfg.Boss,
-		aiCfg:            cfg.AI,
-		bot:              bot.New(cfg.Bot, env),
-		ai:               aiClient,
-		runner:           runner,
-		black:            black,
-		dataFile:         dataFile,
-		cookieFile:       cookieFile,
+		cfg:               &cfg.Boss,
+		aiCfg:             cfg.AI,
+		bot:               bot.New(cfg.Bot, env),
+		ai:                aiClient,
+		runner:            runner,
+		black:             black,
+		dataFile:          dataFile,
+		cookieFile:        cookieFile,
 		browserCookieFile: browserCookieFile,
-		statsFile:        statsFile,
-		stats:            stats,
-		maxChats:         cfg.Boss.MaxChat,
+		statsFile:         statsFile,
+		stats:             stats,
+		maxChats:          cfg.Boss.MaxChat,
 	}
 	if cfg.Boss.EnableAI && aiClient != nil {
 		app.aiReady = make(chan error, 1)
@@ -738,8 +738,9 @@ func (a *App) clickContinueChat(page playwright.Page) (playwright.Page, bool) {
 
 			before := ctx.Pages()
 			if err := btn.Click(); err != nil {
-				log.Printf("[boss] 点击“继续沟通”失败: %v", err)
-				continue
+				if handled := a.forceClick(btn, err); !handled {
+					continue
+				}
 			}
 			sleepRandom(400, 700)
 
@@ -771,6 +772,32 @@ func (a *App) clickContinueChat(page playwright.Page) (playwright.Page, bool) {
 		}
 	}
 	return nil, false
+}
+
+func (a *App) forceClick(btn playwright.Locator, origErr error) bool {
+	log.Printf("[boss] 点击“继续沟通”失败: %v，尝试强制触发", origErr)
+	if btn == nil {
+		return false
+	}
+	if err := btn.Click(playwright.LocatorClickOptions{
+		Force:   playwright.Bool(true),
+		Timeout: playwright.Float(2000),
+	}); err == nil {
+		return true
+	}
+	if _, err := btn.Evaluate(`el => {
+		if (typeof el.click === 'function') {
+			el.click();
+			return true;
+		}
+		if (typeof el.dispatchEvent === 'function') {
+			el.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+		}
+		return false;
+	}`, nil); err == nil {
+		return true
+	}
+	return false
 }
 
 func findNewPage(before, after []playwright.Page) playwright.Page {
