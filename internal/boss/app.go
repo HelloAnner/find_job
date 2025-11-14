@@ -473,8 +473,11 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 				return nil
 			}
 			cards = page.Locator(jobCardSelector)
-			if err := cards.Nth(i).Click(); err != nil {
-				log.Printf("[boss] 点击岗位卡片失败: %v", err)
+			card := cards.Nth(i)
+			if err := card.Click(playwright.LocatorClickOptions{
+				Timeout: playwright.Float(5000),
+			}); err != nil {
+				log.Printf("[boss] 点击岗位卡片失败: %v | 卡片信息: %s", err, describeJobCard(card))
 				continue
 			}
 			sleepRandom(500, 900)
@@ -597,13 +600,20 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	}
 	sleepRandom(500, 900)
 
-	chatPage, inputLocator, ready := a.waitForChatInput(chatPage, &extraPages)
+	message := strings.ReplaceAll(strings.ReplaceAll(a.cfg.SayHi, "\r", ""), "\n", "")
+	chatPage, inputLocator, ready, clicked := a.waitForChatInput(chatPage, &extraPages)
 	if !ready {
+		if clicked {
+			log.Printf("[boss] 已点击“继续沟通”，不等待聊天窗口，视为成功：%s", job.JobName)
+			a.results = append(a.results, *job)
+			a.incrementDailyCount()
+			a.notifyJobSuccess(job, message)
+			return true, nil
+		}
 		log.Printf("[boss] 聊天输入框未出现，跳过岗位:%s", job.JobName)
 		return false, nil
 	}
 
-	message := strings.ReplaceAll(strings.ReplaceAll(a.cfg.SayHi, "\r", ""), "\n", "")
 	if a.cfg.EnableAI && a.ai != nil && job.JobInfo != "" {
 		if ok, aiMsg := a.checkJob(keyword, job.JobName, job.JobInfo); ok && aiMsg != "" {
 			message = aiMsg
@@ -657,24 +667,26 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	return sendSuccess, nil
 }
 
-func (a *App) waitForChatInput(page playwright.Page, extraPages *[]playwright.Page) (playwright.Page, playwright.Locator, bool) {
+func (a *App) waitForChatInput(page playwright.Page, extraPages *[]playwright.Page) (playwright.Page, playwright.Locator, bool, bool) {
 	active := page
+	clicked := false
 	for i := 0; i < 20; i++ {
 		if locator := a.visibleChatInput(active); locator != nil {
-			return active, locator, true
+			return active, locator, true, clicked
 		}
-		if newPage, clicked := a.clickContinueChat(active); clicked {
+		if newPage, ok := a.clickContinueChat(active); ok {
+			clicked = true
 			if newPage != nil {
 				active = newPage
 				if extraPages != nil {
 					*extraPages = append(*extraPages, newPage)
 				}
 			}
-			continue
+			return active, nil, false, true
 		}
 		sleepRandom(500, 900)
 	}
-	return active, nil, false
+	return active, nil, false, clicked
 }
 
 func (a *App) visibleChatInput(page playwright.Page) playwright.Locator {
@@ -761,13 +773,7 @@ func (a *App) clickContinueChat(page playwright.Page) (playwright.Page, bool) {
 				State:   playwright.LoadStateDomcontentloaded,
 				Timeout: playwright.Float(4000),
 			})
-			if err := page.WaitForURL("**/chat**", playwright.PageWaitForURLOptions{
-				Timeout: playwright.Float(2000),
-			}); err == nil {
-				log.Printf("[boss] 点击“继续沟通”后进入聊天页面")
-			} else {
-				log.Printf("[boss] 已点击“继续沟通”，等待聊天页面加载")
-			}
+			log.Printf("[boss] 已点击“继续沟通”，继续投递下一岗位")
 			return nil, true
 		}
 	}
@@ -817,6 +823,40 @@ func findNewPage(before, after []playwright.Page) playwright.Page {
 		}
 	}
 	return nil
+}
+
+func describeJobCard(card playwright.Locator) string {
+	if card == nil {
+		return "card=nil"
+	}
+	attrs := []string{}
+	if jid, err := card.GetAttribute("data-jid"); err == nil && jid != "" {
+		attrs = append(attrs, fmt.Sprintf("data-jid=%s", jid))
+	}
+	if lid, err := card.GetAttribute("data-lid"); err == nil && lid != "" {
+		attrs = append(attrs, fmt.Sprintf("data-lid=%s", lid))
+	}
+	if href, err := card.GetAttribute("href"); err == nil && href != "" {
+		attrs = append(attrs, fmt.Sprintf("href=%s", href))
+	}
+	if text, err := card.InnerText(); err == nil {
+		text = strings.TrimSpace(text)
+		if text != "" {
+			attrs = append(attrs, fmt.Sprintf("text=%s", truncateForLog(text, 160)))
+		}
+	}
+	if len(attrs) == 0 {
+		return "card=unknown"
+	}
+	return strings.Join(attrs, " | ")
+}
+
+func truncateForLog(s string, limit int) string {
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	return string(runes[:limit]) + "…"
 }
 
 func (a *App) updateListData() error {

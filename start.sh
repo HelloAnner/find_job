@@ -63,8 +63,8 @@ build_and_start_single_container() {
   CONTAINER_ID=$(docker run -d \
     --name boss-runner \
     --restart unless-stopped \
-    -v "$ROOT_DIR/config.yaml:/app/config.yaml:ro" \
-    -v "$ROOT_DIR/.env:/app/.env:ro" \
+    -v "$ROOT_DIR/config.yaml:/app/config.yaml" \
+    -v "$ROOT_DIR/.env:/app/.env" \
     -v "$ROOT_DIR/data:/app/data" \
     get_jobs-boss)
 }
