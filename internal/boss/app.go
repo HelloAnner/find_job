@@ -1215,12 +1215,12 @@ func today() string {
 // On successful submission, wait 15–20 minutes; otherwise wait 5–10 minutes.
 func restBetweenJobs(sent bool) {
 	if sent {
-		log.Printf("[boss] 投递成功，随机休息3-5分钟后继续…")
-		sleepRandom(3*60*1000, 5*60*1000)
+		log.Printf("[boss] 投递成功，随机休息1-2分钟后继续…")
+		sleepRandom(1*60*1000, 2*60*1000)
 		return
 	}
-	log.Printf("[boss] 查看岗位结束，随机休息30-45秒后继续…")
-	sleepRandom(30*1000, 45*1000)
+	log.Printf("[boss] 查看岗位结束，随机休息5-10秒后继续…")
+	sleepRandom(5*1000, 10*1000)
 }
 
 // sleepHuman simulates a short human reaction delay (0.3–1.2s) between UI actions.
