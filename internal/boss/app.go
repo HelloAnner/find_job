@@ -479,7 +479,10 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 			}
 			lastCount = count
 		}
-		log.Printf("[boss] 【%s】岗位已全部加载，总数:%d", keyword, lastCount)
+		if lastCount > 50 {
+			lastCount = 50
+		}
+		log.Printf("[boss] 【%s】岗位已加载前 %d 条", keyword, lastCount)
 		_, _ = page.Evaluate("() => window.scrollTo(0, 0)", nil)
 		sleepRandom(500, 1200)
 
@@ -487,6 +490,9 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 		if err != nil {
 			log.Printf("[boss] 读取岗位列表失败: %v | keyword=%s | page=%s", err, keyword, pageURL(page))
 			return err
+		}
+		if count > 50 {
+			count = 50
 		}
 		postCount := 0
 		for i := 0; i < count; i++ {
