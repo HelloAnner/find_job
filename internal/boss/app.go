@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -56,6 +57,11 @@ type App struct {
 	aiOnce            sync.Once
 	aiReadyErr        error
 }
+
+var (
+	humanMouseX = -1.0
+	humanMouseY = -1.0
+)
 
 type DailyCounter struct {
 	Date  string `json:"date"`
@@ -335,7 +341,7 @@ func (a *App) login(page playwright.Page) error {
 	}
 
 	log.Println("[boss] 正在访问Boss直聘主页…")
-	if _, err := page.Goto(homeURL); err != nil {
+	if err := gotoWithHumanPause(page, homeURL); err != nil {
 		return fmt.Errorf("访问主页失败: %w", err)
 	}
 	log.Println("[boss] 主页加载完成，开始检查滑块验证…")
@@ -376,7 +382,7 @@ func (a *App) loginWithVisibleWindow() error {
 	runner.InitStealth()
 	log.Println("[boss] 已弹出浏览器，请扫码登录…")
 	log.Println("[boss] (临时窗口) 正在打开 Boss 主页…")
-	if _, err := page.Goto(homeURL); err != nil {
+	if err := gotoWithHumanPause(page, homeURL); err != nil {
 		return fmt.Errorf("可视化登录访问主页失败: %w", err)
 	}
 	log.Println("[boss] (临时窗口) 主页加载完成，等待滑块验证…")
@@ -399,7 +405,7 @@ func (a *App) reloadHeadlessSession(page playwright.Page) error {
 	if err := a.runner.LoadCookies(a.cookieFile); err != nil {
 		return fmt.Errorf("加载最新cookie失败: %w", err)
 	}
-	if _, err := page.Goto(homeURL); err != nil {
+	if err := gotoWithHumanPause(page, homeURL); err != nil {
 		return fmt.Errorf("刷新无头浏览器状态失败: %w", err)
 	}
 	sleepRandom(600, 1200)
@@ -450,11 +456,11 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 		encoded := url.QueryEscape(keyword)
 		target := fmt.Sprintf("%s&query=%s", searchURL, encoded)
 		log.Printf("[boss] 投递地址:%s", searchURL+"&query="+keyword)
-		if _, err := page.Goto(target); err != nil {
+		if err := gotoWithHumanPause(page, target); err != nil {
 			return fmt.Errorf("打开搜索页失败: %w", err)
 		}
 		if err := page.Locator(jobListContainer).WaitFor(); err != nil {
-			log.Printf("[boss] 等待岗位列表失败: %v", err)
+			a.logJobListWaitFailure(page, keyword, target, err)
 		}
 
 		cards := page.Locator(jobCardSelector)
@@ -488,6 +494,8 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 				log.Printf("[boss] 已达每日投递上限(%d)，停止当前关键词剩余岗位", a.maxChats)
 				return nil
 			}
+
+			sent := false
 			cards = page.Locator(jobCardSelector)
 			currentCount, err := cards.Count()
 			if err != nil {
@@ -503,15 +511,16 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 			if err := card.ScrollIntoViewIfNeeded(); err != nil {
 				log.Printf("[boss] 滚动岗位卡片失败: %v | %s", err, cardDesc)
 			}
-			if err := card.Click(playwright.LocatorClickOptions{
+			if err := clickWithHumanPause(page, card, playwright.LocatorClickOptions{
 				Timeout: playwright.Float(3000),
 			}); err != nil {
 				log.Printf("[boss] 点击岗位卡片失败: %v | %s | page=%s", err, cardDesc, pageURL(page))
-				if err := card.Click(playwright.LocatorClickOptions{
+				if err := clickWithHumanPause(page, card, playwright.LocatorClickOptions{
 					Force:   playwright.Bool(true),
 					Timeout: playwright.Float(2000),
 				}); err != nil {
 					log.Printf("[boss] 强制点击岗位卡片仍失败: %v | %s", err, cardDesc)
+					restBetweenJobs(false)
 					continue
 				}
 			}
@@ -520,12 +529,14 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 			detail := page.Locator(jobDetailBox)
 			if err := detail.WaitFor(playwright.LocatorWaitForOptions{Timeout: playwright.Float(4000)}); err != nil {
 				log.Printf("[boss] 岗位详情面板未出现: %v | %s | page=%s", err, cardDesc, pageURL(page))
+				restBetweenJobs(false)
 				continue
 			}
 			detail = detail.Nth(0)
 
 			jobName := safeText(detail, jobNameSelector)
 			if jobName == "" || a.black.JobBlocked(jobName) {
+				restBetweenJobs(false)
 				continue
 			}
 			salary := decodeSalary(safeText(detail, jobSalarySelector))
@@ -534,11 +545,13 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 			bossNameRaw := safeText(detail, bossNameSelector)
 			bossName, bossActive := splitBossName(bossNameRaw)
 			if a.cfg.FilterDeadHR && containsDeadStatus(bossActive, a.cfg.DeadStatus) {
+				restBetweenJobs(false)
 				continue
 			}
 			bossTitleRaw := safeText(detail, bossInfoSelector)
 			companyName, recruiterTitle := splitBossTitle(bossTitleRaw)
 			if a.black.CompanyBlocked(companyName) || a.black.RecruiterBlocked(recruiterTitle) {
+				restBetweenJobs(false)
 				continue
 			}
 
@@ -552,18 +565,22 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 			}
 			if a.isJobSent(&job) {
 				log.Printf("[boss] 岗位已投递过，自动跳过：%s | %s", job.JobName, job.Href)
+				restBetweenJobs(false)
 				continue
 			}
 
 			if !a.jobMatchesProfile(keyword, job) {
 				log.Printf("[boss] 职位[%s] 与个人介绍不匹配，自动跳过", job.JobName)
+				restBetweenJobs(false)
 				continue
 			}
 
-			if _, err = a.resumeSubmission(page, keyword, &job); err != nil {
+			sent, err = a.resumeSubmission(page, keyword, &job)
+			if err != nil {
 				log.Printf("[boss] 投递岗位失败: %v", err)
 			}
 			postCount++
+			restBetweenJobs(sent)
 		}
 		log.Printf("[boss] 【%s】岗位已投递完毕！已投递岗位数量:%d", keyword, postCount)
 	}
@@ -605,7 +622,8 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 		}
 	}()
 
-	if _, err := detailPage.Goto(detailURL); err != nil {
+	sleepHuman()
+	if err := gotoWithHumanPause(detailPage, detailURL); err != nil {
 		return false, err
 	}
 	sleepRandom(600, 1200)
@@ -628,7 +646,7 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	}
 	chatPage := detailPage
 	popup, err := detailPage.Context().ExpectPage(func() error {
-		if err := chatBtn.Nth(0).Click(); err != nil {
+		if err := clickWithHumanPause(detailPage, chatBtn.Nth(0)); err != nil {
 			log.Printf("[boss] 点击“立即沟通”失败: %v | url=%s", err, detailURL)
 			return err
 		}
@@ -666,20 +684,18 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	}
 
 	input := inputLocator.Nth(0)
-	_ = input.Click()
-	tagNameRaw, _ := input.Evaluate("el => el.tagName", nil)
-	tagName, _ := tagNameRaw.(string)
-	if strings.EqualFold(tagName, "textarea") {
+	if err := clickWithHumanPause(chatPage, input); err != nil {
+		log.Printf("[boss] 点击聊天输入框失败: %v | job=%s | page=%s", err, job.JobName, pageURL(chatPage))
+	}
+	clearInputHuman(chatPage)
+	if err := typeHuman(chatPage, message); err != nil {
+		log.Printf("[boss] 模拟键盘输入失败: %v | job=%s | page=%s", err, job.JobName, pageURL(chatPage))
 		if err := input.Fill(message); err != nil {
-			log.Printf("[boss] 填写打招呼内容失败: %v | job=%s | page=%s", err, job.JobName, pageURL(chatPage))
-			return false, err
-		}
-	} else {
-		if _, err := input.Evaluate("(el, msg) => el.innerText = msg", message); err != nil {
-			log.Printf("[boss] 注入打招呼内容失败: %v | job=%s | page=%s", err, job.JobName, pageURL(chatPage))
+			log.Printf("[boss] 退化为直接填充仍失败: %v | job=%s | page=%s", err, job.JobName, pageURL(chatPage))
 			return false, err
 		}
 	}
+	sleepHuman()
 
 	imgResume := false
 	if a.cfg.SendImgResume {
@@ -698,7 +714,7 @@ func (a *App) resumeSubmission(page playwright.Page, keyword string, job *Job) (
 	sendBtn := chatPage.Locator(sendButtonSelector)
 	sendSuccess := false
 	if count, err := sendBtn.Count(); err == nil && count > 0 {
-		if err := sendBtn.Nth(0).Click(); err == nil {
+		if err := clickWithHumanPause(chatPage, sendBtn.Nth(0)); err == nil {
 			sleepRandom(500, 900)
 			sendSuccess = true
 		} else {
@@ -805,10 +821,10 @@ func (a *App) clickContinueChat(page playwright.Page) (playwright.Page, bool) {
 			}
 
 			before := ctx.Pages()
-			if err := btn.Click(playwright.LocatorClickOptions{
+			if err := clickWithHumanPause(page, btn, playwright.LocatorClickOptions{
 				Timeout: playwright.Float(5000),
 			}); err != nil {
-				if handled := a.forceClick(btn, err); !handled {
+				if handled := a.forceClick(page, btn, err); !handled {
 					continue
 				}
 			}
@@ -838,12 +854,12 @@ func (a *App) clickContinueChat(page playwright.Page) (playwright.Page, bool) {
 	return nil, false
 }
 
-func (a *App) forceClick(btn playwright.Locator, origErr error) bool {
+func (a *App) forceClick(page playwright.Page, btn playwright.Locator, origErr error) bool {
 	log.Printf("[boss] 点击“继续沟通”失败: %v，尝试强制触发", origErr)
 	if btn == nil {
 		return false
 	}
-	if err := btn.Click(playwright.LocatorClickOptions{
+	if err := clickWithHumanPause(page, btn, playwright.LocatorClickOptions{
 		Force:   playwright.Bool(true),
 		Timeout: playwright.Float(2000),
 	}); err == nil {
@@ -859,6 +875,7 @@ func (a *App) forceClick(btn playwright.Locator, origErr error) bool {
 		}
 		return false;
 	}`, nil); err == nil {
+		sleepHuman()
 		return true
 	}
 	return false
@@ -925,6 +942,80 @@ func pageURL(p playwright.Page) string {
 		return u
 	}
 	return "url=unknown"
+}
+
+func (a *App) logJobListWaitFailure(page playwright.Page, keyword, target string, waitErr error) {
+	log.Printf("[boss] 等待岗位列表失败: %v | keyword=%s | target=%s | currentPage=%s", waitErr, keyword, target, pageURL(page))
+	if page == nil {
+		return
+	}
+
+	if title, err := page.Title(); err == nil {
+		log.Printf("[boss] jobList debug | pageTitle=%s", strings.TrimSpace(title))
+	} else {
+		log.Printf("[boss] jobList debug | 获取页面标题失败: %v", err)
+	}
+
+	if state, err := page.Evaluate("() => document.readyState", nil); err == nil {
+		log.Printf("[boss] jobList debug | readyState=%v", state)
+	} else {
+		log.Printf("[boss] jobList debug | readyState获取失败: %v", err)
+	}
+
+	if strings.Contains(page.URL(), "safe/verify-slider") {
+		log.Printf("[boss] jobList debug | 当前页面疑似滑块验证: %s", page.URL())
+	}
+
+	jobList := page.Locator(jobListContainer)
+	if jobList != nil {
+		if count, err := jobList.Count(); err == nil {
+			log.Printf("[boss] jobList debug | jobListContainer.count=%d", count)
+			if count > 0 {
+				if text, err := jobList.First().InnerText(); err == nil {
+					log.Printf("[boss] jobList debug | jobListContainer.preview=%s", truncateForLog(strings.TrimSpace(text), 200))
+				}
+			}
+		} else {
+			log.Printf("[boss] jobList debug | jobListContainer.count失败: %v", err)
+		}
+	}
+
+	loginLocator := page.Locator(loginBtn)
+	if loginLocator != nil {
+		if count, err := loginLocator.Count(); err == nil {
+			visible := false
+			if count > 0 {
+				visible, _ = loginLocator.First().IsVisible()
+			}
+			log.Printf("[boss] jobList debug | loginBtn.count=%d visible=%v", count, visible)
+		} else {
+			log.Printf("[boss] jobList debug | loginBtn.count失败: %v", err)
+		}
+	}
+
+	dialog := page.Locator(dialogContainer)
+	if dialog != nil {
+		if count, err := dialog.Count(); err == nil {
+			if count > 0 {
+				if text, err := dialog.First().InnerText(); err == nil {
+					log.Printf("[boss] jobList debug | dialog.text=%s", truncateForLog(strings.TrimSpace(text), 200))
+				}
+			} else {
+				log.Printf("[boss] jobList debug | dialog.count=0")
+			}
+		} else {
+			log.Printf("[boss] jobList debug | dialog.count失败: %v", err)
+		}
+	}
+
+	body := page.Locator("body")
+	if body != nil {
+		if text, err := body.InnerText(); err == nil {
+			log.Printf("[boss] jobList debug | bodySnippet=%s", truncateForLog(strings.TrimSpace(text), 200))
+		} else {
+			log.Printf("[boss] jobList debug | bodySnippet获取失败: %v", err)
+		}
+	}
 }
 
 func loadSentJobs(path string) (map[string]string, error) {
@@ -999,7 +1090,7 @@ func (a *App) markJobSent(job *Job) {
 
 func (a *App) updateListData() error {
 	page := a.runner.Page()
-	if _, err := page.Goto("https://www.zhipin.com/web/geek/chat"); err != nil {
+	if err := gotoWithHumanPause(page, "https://www.zhipin.com/web/geek/chat"); err != nil {
 		return err
 	}
 	sleepRandom(2000, 3500)
@@ -1114,12 +1205,142 @@ func today() string {
 	return time.Now().Format("2006-01-02")
 }
 
+// restBetweenJobs enforces human-like pauses between job views/submissions.
+// On successful submission, wait 15–20 minutes; otherwise wait 5–10 minutes.
+func restBetweenJobs(sent bool) {
+	if sent {
+		log.Printf("[boss] 投递成功，随机休息3-5分钟后继续…")
+		sleepRandom(3*60*1000, 5*60*1000)
+		return
+	}
+	log.Printf("[boss] 查看岗位结束，随机休息30-45秒后继续…")
+	sleepRandom(30*1000, 45*1000)
+}
+
+// sleepHuman simulates a short human reaction delay (0.3–1.2s) between UI actions.
+func sleepHuman() {
+	sleepRandom(300, 1200)
+}
+
+// gotoWithHumanPause wraps Page.Goto with pre/post human-like pauses and throttles requests.
+func gotoWithHumanPause(page playwright.Page, url string) error {
+	sleepRandom(1200, 2600)
+	_, err := page.Goto(url)
+	sleepRandom(1000, 2000)
+	return err
+}
+
+// clickWithHumanPause moves the mouse along a short path before performing a hardware click.
+func clickWithHumanPause(page playwright.Page, loc playwright.Locator, options ...playwright.LocatorClickOptions) error {
+	if page == nil || loc == nil {
+		return errors.New("missing page or locator for click")
+	}
+	targetX, targetY, err := moveMouseHuman(page, loc)
+	if err != nil {
+		if len(options) > 0 {
+			return loc.Click(options[0])
+		}
+		return loc.Click()
+	}
+	button := playwright.MouseButtonLeft
+	if len(options) > 0 && options[0].Button != nil {
+		button = options[0].Button
+	}
+	clickCount := 1
+	if len(options) > 0 && options[0].ClickCount != nil {
+		clickCount = *options[0].ClickCount
+	}
+	for i := 0; i < clickCount; i++ {
+		jitterX := targetX + randFloat(-1.5, 1.5)
+		jitterY := targetY + randFloat(-1.5, 1.5)
+		_ = page.Mouse().Move(jitterX, jitterY, playwright.MouseMoveOptions{Steps: playwright.Int(rand.Intn(3) + 1)})
+		sleepRandom(40, 120)
+		if err := page.Mouse().Down(playwright.MouseDownOptions{Button: button}); err != nil {
+			return err
+		}
+		sleepRandom(70, 190)
+		if err := page.Mouse().Up(playwright.MouseUpOptions{Button: button}); err != nil {
+			return err
+		}
+		sleepRandom(100, 220)
+	}
+	return nil
+}
+
+// moveMouseHuman simulates a curved pointer trajectory across the element hitbox.
+func moveMouseHuman(page playwright.Page, loc playwright.Locator) (float64, float64, error) {
+	if page == nil || loc == nil {
+		return 0, 0, errors.New("missing page or locator")
+	}
+	if err := loc.ScrollIntoViewIfNeeded(); err != nil {
+		return 0, 0, err
+	}
+	box, err := loc.BoundingBox()
+	if err != nil || box == nil {
+		return 0, 0, errors.New("locator bounding box unavailable")
+	}
+	targetX := box.X + box.Width*0.2 + rand.Float64()*box.Width*0.6
+	targetY := box.Y + box.Height*0.2 + rand.Float64()*box.Height*0.6
+	if humanMouseX < 0 || humanMouseY < 0 {
+		humanMouseX = targetX + randFloat(-120, 120)
+		humanMouseY = targetY + randFloat(-120, 120)
+	}
+	steps := rand.Intn(6) + 7
+	for i := 1; i <= steps; i++ {
+		progress := float64(i) / float64(steps)
+		curveX := humanMouseX + (targetX-humanMouseX)*progress + randFloat(-4, 4)
+		curveY := humanMouseY + (targetY-humanMouseY)*progress + randFloat(-4, 4)
+		if err := page.Mouse().Move(curveX, curveY, playwright.MouseMoveOptions{Steps: playwright.Int(1)}); err != nil {
+			return 0, 0, err
+		}
+		sleepRandom(30, 80)
+	}
+	humanMouseX = targetX
+	humanMouseY = targetY
+	return targetX, targetY, nil
+}
+
+// pressHuman issues a keyboard press with randomized inter-key delay.
+func pressHuman(page playwright.Page, key string) error {
+	if page == nil {
+		return errors.New("nil page for keyboard press")
+	}
+	delay := float64(rand.Intn(120) + 60)
+	sleepHuman()
+	return page.Keyboard().Press(key, playwright.KeyboardPressOptions{Delay: playwright.Float(delay)})
+}
+
+func typeHuman(page playwright.Page, text string) error {
+	if page == nil {
+		return errors.New("nil page for typing")
+	}
+	delay := float64(rand.Intn(160) + 80)
+	return page.Keyboard().Type(text, playwright.KeyboardTypeOptions{Delay: playwright.Float(delay)})
+}
+
+func clearInputHuman(page playwright.Page) {
+	selectAll := "Control+A"
+	if runtime.GOOS == "darwin" {
+		selectAll = "Meta+A"
+	}
+	_ = pressHuman(page, selectAll)
+	sleepHuman()
+	_ = pressHuman(page, "Backspace")
+}
+
 func sleepRandom(minMs, maxMs int) {
 	if maxMs <= minMs {
 		maxMs = minMs + 1
 	}
 	delay := rand.Intn(maxMs-minMs) + minMs
 	time.Sleep(time.Duration(delay) * time.Millisecond)
+}
+
+func randFloat(min, max float64) float64 {
+	if max <= min {
+		return min
+	}
+	return rand.Float64()*(max-min) + min
 }
 
 func loadDailyCounter(path string) (*DailyCounter, error) {
@@ -1251,7 +1472,9 @@ func (a *App) isLoginRequired(page playwright.Page) (bool, error) {
 	if err := header.WaitFor(); err == nil {
 		errorLogin := page.Locator(errorPageLogin)
 		if count, err := errorLogin.Count(); err == nil && count > 0 {
-			_ = errorLogin.Click()
+			if err := clickWithHumanPause(page, errorLogin); err != nil {
+				log.Printf("[boss] 点击错误登录按钮失败: %v", err)
+			}
 			return true, nil
 		}
 	}
@@ -1260,7 +1483,7 @@ func (a *App) isLoginRequired(page playwright.Page) (bool, error) {
 }
 
 func (a *App) scanLogin(page playwright.Page) error {
-	if _, err := page.Goto(homeURL + "/web/user/?ka=header-login"); err != nil {
+	if err := gotoWithHumanPause(page, homeURL+"/web/user/?ka=header-login"); err != nil {
 		return fmt.Errorf("进入登录页失败: %w", err)
 	}
 	sleepRandom(600, 1200)
@@ -1274,7 +1497,8 @@ func (a *App) scanLogin(page playwright.Page) error {
 	}
 
 	log.Println("[boss] 等待登录…")
-	if err := page.Locator(loginScanSwitch).Click(); err != nil {
+	bannerSwitch := page.Locator(loginScanSwitch)
+	if err := clickWithHumanPause(page, bannerSwitch); err != nil {
 		return fmt.Errorf("点击二维码登录按钮失败: %w", err)
 	}
 

@@ -25,11 +25,18 @@ RUN mkdir -p "$PLAYWRIGHT_DRIVER_PATH" "$PLAYWRIGHT_BROWSERS_PATH" \
 # 运行时阶段 - 集成Playwright环境
 FROM debian:bookworm-slim
 
+# 设置上海时区
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata && \
+    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # 设置环境变量
 ENV PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     PLAYWRIGHT_BROWSERS_PATH=/opt/playwright/browsers \
-    PLAYWRIGHT_DRIVER_PATH=/opt/playwright/driver
+    PLAYWRIGHT_DRIVER_PATH=/opt/playwright/driver \
+    TZ=Asia/Shanghai
 
 # 安装 Playwright 运行所需的系统依赖
 RUN echo 'deb https://mirrors.aliyun.com/debian/ bookworm main contrib non-free non-free-firmware' > /etc/apt/sources.list \

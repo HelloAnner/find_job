@@ -20,6 +20,7 @@ type Runner struct {
 }
 
 // NewRunner creates a chromium runner configured like the Java PlaywrightUtil.
+// It also enables stealth evasion scripts.
 func NewRunner(headless bool) (*Runner, error) {
 	ensurePlaywrightCache()
 
@@ -31,6 +32,13 @@ func NewRunner(headless bool) (*Runner, error) {
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(headless),
 		SlowMo:   playwright.Float(50),
+		Args: []string{
+			"--disable-blink-features=AutomationControlled",
+			"--disable-features=IsolateOrigins,site-per-process",
+			"--disable-dev-shm-usage",
+			"--no-sandbox",
+			"--disable-infobars",
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("launch browser: %w", err)
@@ -39,6 +47,7 @@ func NewRunner(headless bool) (*Runner, error) {
 	context, err := browser.NewContext(playwright.BrowserNewContextOptions{
 		Viewport:  &playwright.Size{Width: 1920, Height: 1080},
 		UserAgent: playwright.String("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"),
+		Locale:    playwright.String("zh-CN"),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create context: %w", err)
@@ -132,6 +141,7 @@ func (r *Runner) InitStealth() {
 	if r == nil {
 		return
 	}
+	loaded := false
 	headers := map[string]string{
 		"sec-ch-ua":          "\"Google Chrome\";v=\"135\", \"Not-A.Brand\";v=\"8\", \"Chromium\";v=\"135\"",
 		"sec-ch-ua-mobile":   "?0",
@@ -159,15 +169,22 @@ func (r *Runner) InitStealth() {
 		Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});`
 	if err := r.page.AddInitScript(playwright.Script{Content: playwright.String(script)}); err != nil {
 		log.Printf("[playwright] 注入反检测脚本失败: %v", err)
+	} else {
+		loaded = true
 	}
 
 	for _, path := range []string{"assets/stealth.min.js", "src/main/resources/stealth.min.js"} {
 		if data, err := os.ReadFile(path); err == nil {
 			if err := r.page.AddInitScript(playwright.Script{Content: playwright.String(string(data))}); err != nil {
 				log.Printf("[playwright] 注入stealth.min.js失败: %v", err)
+			} else {
+				loaded = true
 			}
 			break
 		}
+	}
+	if loaded {
+		log.Println("[playwright] stealth 脚本加载完成，已抹除自动化浏览器标识")
 	}
 }
 
