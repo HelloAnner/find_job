@@ -1215,8 +1215,8 @@ func today() string {
 // On successful submission, wait 15–20 minutes; otherwise wait 5–10 minutes.
 func restBetweenJobs(sent bool) {
 	if sent {
-		log.Printf("[boss] 投递成功，随机休息1-2分钟后继续…")
-		sleepRandom(1*60*1000, 2*60*1000)
+		log.Printf("[boss] 投递成功，随机休息80-120秒后继续…")
+		sleepRandom(80*1000, 120*1000)
 		return
 	}
 	log.Printf("[boss] 查看岗位结束，随机休息5-10秒后继续…")
