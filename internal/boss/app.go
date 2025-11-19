@@ -368,6 +368,9 @@ func (a *App) login(page playwright.Page) error {
 			log.Printf("[boss] 保存cookie失败: %v", err)
 		}
 	}
+
+	// 登录成功后输出用户名称
+	a.logCurrentUserName(page)
 	return nil
 }
 
@@ -1524,6 +1527,57 @@ func (a *App) scanLogin(page playwright.Page) error {
 		}
 		time.Sleep(2 * time.Second)
 	}
+}
+
+func (a *App) logCurrentUserName(page playwright.Page) {
+	if page == nil {
+		return
+	}
+
+	nav := page.Locator(loginBtn)
+	if nav == nil {
+		return
+	}
+	if count, err := nav.Count(); err != nil || count == 0 {
+		return
+	}
+
+	selectors := []string{
+		"span[class*='name']",
+		"p[class*='name']",
+		"div[class*='name']",
+		"span[class*='nickname']",
+	}
+
+	var name string
+	for _, sel := range selectors {
+		name = safeText(nav, sel)
+		if name != "" {
+			break
+		}
+	}
+
+	if name == "" {
+		if text, err := nav.Nth(0).InnerText(); err == nil {
+			name = strings.TrimSpace(text)
+		} else if text, err := nav.Nth(0).TextContent(); err == nil {
+			name = strings.TrimSpace(text)
+		}
+	}
+
+	if name == "" {
+		return
+	}
+
+	for _, line := range strings.Split(name, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			name = line
+			break
+		}
+	}
+
+	log.Printf("[boss] 当前登录用户：%s", name)
 }
 
 func safeText(root playwright.Locator, selector string) string {
