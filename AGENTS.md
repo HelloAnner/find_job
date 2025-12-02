@@ -211,3 +211,55 @@
 
 ### 后续可选
 - 完整城市编码↔名称字典（前端自动完成/选择器），避免展示原始编码；当前最小解码已满足“全国/不限”的主流程。
+
+## 2025-12-02 新增部署文档 deploy.md（源码快速启动）
+
+- 目的：提供一份面向“从源码直接启动”的最短路径说明，覆盖本机运行、前后端分离开发、二进制运行与 Docker 可选方案。
+
+### 新增
+- 新文件：`deploy.md`
+  - 前置依赖：Go ≥ 1.25、Node ≥ 20；（可选）Docker。
+  - 本机启动：
+    - 构建前端：`(cd front && npm ci && npm run build)`。
+    - 安装 Playwright 浏览器：`go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5200.1 install chromium`。
+    - 启动后端：`go run .`（服务端口 38888，提供静态资源与 `/api`）。
+  - 开发模式：后端 `go run .`（38888）+ 前端 `(cd front && npm run dev)`（3000，已代理 `/api`）。
+  - 生产模式：`go build -o boss ./` 后直接运行 `./boss`。
+  - Docker（可选）：`./start.sh` 一键构建运行，或 `docker build` + `docker run`。
+  - 首次登录两种路径：
+    1) `boss.openWindows: true` 可视化扫码，生成 `data/boss/cookie.json`；
+    2) 直接提供 `data/boss/browser_cookie.txt` 或 `data/boss/cookie.json`。
+  - 端口说明：默认硬编码 38888，如冲突需改 `main.go` 并重新编译（或仅在 Docker 中更改宿主映射端口）。
+
+### 坑点
+- 无头模式且缺少 Cookie 会直接退出（先用可视化扫码或提供 Cookie）。
+- 未安装 Playwright 浏览器会报 driver/browsers 缺失（执行安装命令）。
+
+### 验证
+- 本机：按文档步骤可启动并访问 `http://localhost:38888`；前端在 ~0.8s 自动保存配置到 `config.yaml`。
+- Docker：`./start.sh` 完成构建与启动，`docker logs -f boss-runner` 可见投递日志。
+
+## 2025-12-02 README 精简重写（介绍/流程/原理/部署入口/目录）
+
+- 目的：将冗长说明压缩为“项目介绍 + 工作流程 + 原理 + 部署入口（指向 deploy.md）+ 目录结构”。
+- 改动：
+  - `README.md` 顶部标题统一为 `find_jobs`；
+  - 保留核心概念（端口 38888、自动保存、Cookie 策略、AI/推送能力、循环策略）；
+  - 部署细节移交到 `deploy.md`，避免两处重复；
+  - 新增“目录结构（要点）”小节，定位常用源码文件夹。
+- 坑点：
+  - 旧 README 中的 Compose 与打包细节被移除，读者需转到 `deploy.md` 获取；
+  - 保留中文说明，符合项目“对话中文”的约定。
+- 验证：
+  - 渲染检查：GitHub/本地均可正常渲染；链接 `deploy.md` 有效。
+
+## 2025-12-02 部署方式顺序调整（Docker 优先）
+
+- 目的：按你的要求，优先介绍 Docker 启动方式，源码启动放到其后；减少首次上手成本。
+- 改动：
+  - 重写 `deploy.md`：第 1 节为“Docker 一键启动（推荐）”，提供 `./start.sh` 与等价手动命令；
+  - 将“基于源码运行/开发模式/常见问题/目录速查”置于其后；
+  - `README.md` 的“部署与启动”小节改为“优先使用 Docker 一键脚本，详见 deploy.md”。
+- 坑点：容器默认无头运行，必须先准备 Cookie（`data/boss/browser_cookie.txt` 或 `data/boss/cookie.json`）。
+- 验证：
+  - 本地执行 `./start.sh` 正常构建并启动容器；`docker logs -f boss-runner` 能看到“投递完成 | 岗位：”日志。
