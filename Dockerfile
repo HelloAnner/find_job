@@ -1,5 +1,19 @@
-# 单镜像架构 - 集成Go应用和Playwright环境
-FROM m.daocloud.io/docker.io/library/golang:1.25.3 AS builder
+###############################################
+# 1) 前端构建阶段：使用 Node 构建 Vite 静态资源
+###############################################
+FROM m.daocloud.io/docker.io/node:20-alpine AS frontend
+WORKDIR /frontend
+# 仅复制依赖清单，最大化缓存命中
+COPY front/package*.json ./
+RUN npm ci
+# 复制其余前端源码并打包
+COPY front/ ./
+RUN npm run build
+
+###############################################
+# 2) Go 构建阶段：编译主程序并预装 Playwright 驱动
+###############################################
+FROM m.daocloud.io/docker.io/golang:1.25.3 AS builder
 
 # 使构建过程感知目标平台
 ARG TARGETOS
@@ -9,16 +23,14 @@ ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}
 
 WORKDIR /src
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
 RUN go mod download
-
+# 将前端产物覆盖到 front/dist，以便 go:embed 或静态提供
+COPY --from=frontend /frontend/dist ./front/dist
+# 复制项目源码
 COPY . .
-# Build frontend
-RUN cd front && npm ci && npm run build
 # 针对目标平台编译（由 buildx 传入 TARGETOS/TARGETARCH）
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o /out/boss ./
 
@@ -28,8 +40,10 @@ ENV PLAYWRIGHT_DRIVER_PATH=/out/playwright/driver \
 RUN mkdir -p "$PLAYWRIGHT_DRIVER_PATH" "$PLAYWRIGHT_BROWSERS_PATH" \
     && go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5200.1 install chromium
 
-# 运行时阶段 - 集成Playwright环境
-FROM m.daocloud.io/docker.io/library/debian:bookworm-slim
+###############################################
+# 3) 运行时阶段：最小化镜像，集成浏览器依赖
+###############################################
+FROM m.daocloud.io/docker.io/debian:bookworm-slim
 
 # 设置上海时区
 RUN apt-get update && apt-get install -y --no-install-recommends tzdata && \
@@ -88,3 +102,4 @@ RUN chmod +x /usr/local/bin/boss-entrypoint.sh
 VOLUME ["/app/data"]
 ENTRYPOINT ["boss-entrypoint.sh"]
 CMD ["/app/boss"]
+EXPOSE 38888

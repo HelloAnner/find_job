@@ -76,13 +76,19 @@ echo "Registry:   $REGISTRY"
 echo "Repository: $IMAGE_BASE"
 echo "Platforms:  $PLATFORMS"
 echo "Tag:        latest (仅保留此标签)"
+echo
+echo "[1/4] 初始化 buildx 与 binfmt (如首次运行可能较慢)…"
 
 :
 
 ensure_builder() {
   # 尝试安装 binfmt/qemu（若可用则启用，失败不致命）
   if docker info --format '{{json .}}' 2>/dev/null | grep -q 'runc'; then
-    docker run --privileged --rm tonistiigi/binfmt:latest --install all >/dev/null 2>&1 || true
+    echo "  - 安装/更新 binfmt (qemu) 支持 …"
+    # 先单独拉取镜像以获得可见进度
+    docker pull tonistiigi/binfmt:latest || true
+    # 安装所有架构的解释器（可能 10~60s）
+    docker run --privileged --rm tonistiigi/binfmt:latest --install all || true
   fi
   if ! docker buildx inspect "$BUILDER_NAME" >/dev/null 2>&1; then
     echo "创建 buildx builder: $BUILDER_NAME"
@@ -95,24 +101,28 @@ debug = true
   http = true
   insecure = true
 CFG
+      echo "  - 创建 buildx builder: $BUILDER_NAME (insecure=${INSECURE})"
       docker buildx create \
         --name "$BUILDER_NAME" \
         --driver docker-container \
         --driver-opt network=host \
-        --config "$cfg" >/dev/null
+        --config "$cfg"
       rm -f "$cfg"
     else
-      docker buildx create --name "$BUILDER_NAME" --driver docker-container >/dev/null
+      echo "  - 创建 buildx builder: $BUILDER_NAME"
+      docker buildx create --name "$BUILDER_NAME" --driver docker-container
     fi
   fi
-  docker buildx use "$BUILDER_NAME" >/dev/null
-  docker buildx inspect --bootstrap >/dev/null
+  docker buildx use "$BUILDER_NAME"
+  echo "  - 启动 builder (${BUILDER_NAME}) 内置 BuildKit …"
+  docker buildx inspect --bootstrap
 }
 
 build_and_push() {
   local no_cache_flag=( )
   [[ "$NO_CACHE" == true ]] && no_cache_flag+=(--no-cache)
-  echo "开始构建并推送: ${IMAGE_BASE}:latest"
+  echo
+  echo "[2/4] 构建并推送镜像: ${IMAGE_BASE}:latest"
   docker buildx build \
     --platform "$PLATFORMS" \
     -t "${IMAGE_BASE}:latest" \
@@ -144,7 +154,7 @@ verify_multiarch_latest() {
     echo "ERROR: latest 未同时包含 amd64 与 arm64。" >&2
     return 1
   fi
-  echo "Verified: latest 同时包含 linux/amd64 与 linux/arm64"
+  echo "[3/4] 校验通过: latest 同时包含 linux/amd64 与 linux/arm64"
 }
 
 # 仅保留 latest 标签（通过 Gitea Packages API 删除其它版本）
@@ -192,6 +202,8 @@ retain_latest_only() {
 ensure_builder
 build_and_push
 verify_multiarch_latest
+echo
+echo "[4/4] 仅保留 latest 标签（如配置了 Gitea 账号）…"
 retain_latest_only
 
 if [[ "$PRUNE" == true ]]; then
@@ -202,4 +214,5 @@ fi
 echo
 echo "完成: 推送 ${IMAGE_BASE}:latest"
 echo "服务器上可执行: ./scripts/start-server.sh --registry ${REGISTRY} --namespace ${NAMESPACE} --repo ${REPO}"
+echo "提示: 若长时间无输出, 可能在拉取 tonistiigi/binfmt 或 builder 启动, 现在已显示详细进度。"
 echo
