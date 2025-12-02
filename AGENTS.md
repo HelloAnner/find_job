@@ -263,3 +263,11 @@
 - 坑点：容器默认无头运行，必须先准备 Cookie（`data/boss/browser_cookie.txt` 或 `data/boss/cookie.json`）。
 - 验证：
   - 本地执行 `./start.sh` 正常构建并启动容器；`docker logs -f boss-runner` 能看到“投递完成 | 岗位：”日志。
+
+## 2025-12-02 README 增补“前端页面”与截图
+
+- 目的：补充 UI 使用感知，降低首次上手成本；按你的要求把 `images/config.png` 嵌入到 README。
+- 改动：
+  - `README.md` 新增「前端页面」小节，说明布局、模块、交互（自动保存/Chip 输入/表单基线）与保存指示；
+  - 内嵌图片：`![配置页面预览](images/config.png)`。
+- 验证：GitHub/本地渲染正常，图片路径有效；与现有“部署与启动”“目录结构”内容不冲突。
