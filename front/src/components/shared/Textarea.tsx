@@ -1,10 +1,9 @@
 import React from 'react';
-import { HelpCircle } from 'lucide-react';
 
 interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   label: string;
   tooltip?: string;
-  icon?: React.ReactNode;
+  icon?: string; // Material Symbols 图标名称
 }
 
 export const Textarea: React.FC<TextareaProps> = ({
@@ -22,7 +21,9 @@ export const Textarea: React.FC<TextareaProps> = ({
         </p>
         {tooltip && (
           <div className="tooltip">
-            <HelpCircle size={18} className="text-[#617589] dark:text-slate-400 cursor-help" />
+            <span className="material-symbols-outlined text-[#617589] dark:text-slate-400 cursor-help" style={{ fontSize: '18px' }}>
+              help_outline
+            </span>
             <span className="tooltiptext">{tooltip}</span>
           </div>
         )}
@@ -30,11 +31,13 @@ export const Textarea: React.FC<TextareaProps> = ({
       <div className="relative">
         {icon && (
           <div className="absolute left-3 top-3 text-[#617589] dark:text-slate-400">
-            {icon}
+            <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
+              {icon}
+            </span>
           </div>
         )}
         <textarea
-          className={`form-textarea flex w-full min-w-0 flex-1 resize-y overflow-hidden rounded-lg text-[#111418] dark:text-white focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-[#dbe0e6] dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-primary dark:focus:border-primary min-h-32 placeholder:text-[#617589] p-[15px] text-base font-normal leading-normal ${
+          className={`flex w-full min-w-0 flex-1 resize-y overflow-hidden rounded-xl text-[#111418] dark:text-white placeholder:text-[#617589] bg-white dark:bg-slate-900/70 ring-1 ring-slate-200/70 dark:ring-white/10 focus:outline-none focus:ring-2 focus:ring-primary/40 min-h-32 p-[15px] text-base font-normal leading-normal transition-shadow ${
             icon ? 'pl-10' : ''
           } ${className}`}
           {...props}

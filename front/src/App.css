@@ -1,8 +1,9 @@
+/* 重置 Vite 模板默认样式，避免限制整体布局宽度 */
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  text-align: left;
 }
 
 .logo {

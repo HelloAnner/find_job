@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 
-
 log_info() {
   printf '[start] %s\n' "$*"
 }
@@ -17,19 +16,12 @@ require_cmd() {
 }
 
 require_cmd docker
+require_cmd node
+require_cmd npm
 
 # 检测Docker守护进程是否运行
 if ! docker info >/dev/null 2>&1; then
   log_info "Docker守护进程未运行，请先启动Docker"
-  exit 1
-fi
-
-if docker compose version >/dev/null 2>&1; then
-  COMPOSE=(docker compose)
-elif command -v docker-compose >/dev/null 2>&1; then
-  COMPOSE=(docker-compose)
-else
-  log_info "未检测到 docker compose，请先安装 Docker Compose V2"
   exit 1
 fi
 
@@ -56,15 +48,35 @@ ensure_config() {
   fi
 }
 
+build_frontend() {
+  log_info "构建前端界面（确保最新效果）…"
+  cd "$ROOT_DIR/front"
+
+  # 安装依赖（如果node_modules不存在）
+  if [ ! -d "node_modules" ]; then
+    log_info "安装前端依赖…"
+    npm ci
+  fi
+
+  # 构建前端到 dist 目录
+  npm run build
+  cd "$ROOT_DIR"
+}
+
 build_and_start_single_container() {
-  log_info "构建单镜像boss应用…"
+  log_info "构建单镜像boss应用（包含最新前端）…"
+
+  # 确保前端已构建
+  build_frontend
+
+  # 构建Docker镜像
   docker build -t get_jobs-boss .
 
   log_info "启动boss应用…"
   CONTAINER_ID=$(docker run -d \
     --name boss-runner \
     --restart unless-stopped \
-    -p 48888:48888 \
+    -p 38888:38888 \
     -v "$ROOT_DIR/config.yaml:/app/config.yaml" \
     -v "$ROOT_DIR/.env:/app/.env" \
     -v "$ROOT_DIR/data:/app/data" \

@@ -55,8 +55,8 @@ func main() {
 		log.Fatalf("初始化配置失败: %v", err)
 	}
 
-	// Start HTTP server on port 48888
-	server := api.NewServer("config.yaml", cm, 48888)
+	// Start HTTP server on port 38888
+	server := api.NewServer("config.yaml", cm, 38888)
 	go func() {
 		if err := server.Start(); err != nil {
 			log.Printf("HTTP服务器启动失败: %v", err)

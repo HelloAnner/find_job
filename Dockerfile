@@ -1,14 +1,11 @@
 # 单镜像架构 - 集成Go应用和Playwright环境
-FROM golang:1.25.3 AS builder
+FROM m.daocloud.io/docker.io/library/golang:1.25.3 AS builder
 
 ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}
 
 WORKDIR /src
-RUN echo 'deb https://mirrors.aliyun.com/debian/ trixie main contrib non-free non-free-firmware' > /etc/apt/sources.list \
-    && echo 'deb https://mirrors.aliyun.com/debian/ trixie-updates main contrib non-free non-free-firmware' >> /etc/apt/sources.list \
-    && echo 'deb https://mirrors.aliyun.com/debian-security trixie-security main contrib non-free non-free-firmware' >> /etc/apt/sources.list \
-    && apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs
 
@@ -27,7 +24,7 @@ RUN mkdir -p "$PLAYWRIGHT_DRIVER_PATH" "$PLAYWRIGHT_BROWSERS_PATH" \
     && go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5200.1 install chromium
 
 # 运行时阶段 - 集成Playwright环境
-FROM debian:bookworm-slim
+FROM m.daocloud.io/docker.io/library/debian:bookworm-slim
 
 # 设置上海时区
 RUN apt-get update && apt-get install -y --no-install-recommends tzdata && \
@@ -43,10 +40,7 @@ ENV PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true \
     TZ=Asia/Shanghai
 
 # 安装 Playwright 运行所需的系统依赖
-RUN echo 'deb https://mirrors.aliyun.com/debian/ bookworm main contrib non-free non-free-firmware' > /etc/apt/sources.list \
-    && echo 'deb https://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free non-free-firmware' >> /etc/apt/sources.list \
-    && echo 'deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware' >> /etc/apt/sources.list \
-    && apt-get update \
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         fonts-liberation \

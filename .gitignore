@@ -58,3 +58,8 @@ dist/
 data/boss/sent_jobs.json
 
 data/boss/stats.json
+
+node_modules
+
+front/dist/
+front/node_modules/

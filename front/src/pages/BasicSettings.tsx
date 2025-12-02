@@ -1,9 +1,10 @@
 import React from 'react';
-import { Settings, MapPin, Briefcase, GraduationCap } from 'lucide-react';
 import { useConfig } from '@/contexts/ConfigContext';
-import { Input } from '@/components/shared/Input';
-import { Select } from '@/components/shared/Select';
 import { CheckboxGroup } from '@/components/shared/CheckboxGroup';
+import { ChipInput } from '@/components/shared/ChipInput';
+import { Input } from '@/components/shared/Input';
+import { Select as NiceSelect } from '@/components/shared/Select';
+import { Switch } from '@/components/shared/Switch';
 
 const experienceOptions = [
   { value: '不限', label: '不限' },
@@ -44,17 +45,9 @@ const stageOptions = [
 ];
 
 export const BasicSettings: React.FC = () => {
-  const { config, updateConfig, saveConfig, resetConfig } = useConfig();
+  const { config, updateConfig, resetConfig } = useConfig();
 
-  const handleKeywordsChange = (value: string) => {
-    const keywords = value.split(',').map(k => k.trim()).filter(k => k);
-    updateConfig({ boss: { ...config.boss, keywords } });
-  };
-
-  const handleCityChange = (value: string) => {
-    const cities = value.split(',').map(c => c.trim()).filter(c => c);
-    updateConfig({ boss: { ...config.boss, cityCode: cities } });
-  };
+  // 关键词与地域已改为 ChipInput，直接在 onChange 中更新数组，无需本地 split 逻辑
 
   const handleExperienceChange = (value: string) => {
     updateConfig({ boss: { ...config.boss, experience: [value] } });
@@ -81,14 +74,7 @@ export const BasicSettings: React.FC = () => {
     });
   };
 
-  const handleSave = async () => {
-    const success = await saveConfig();
-    if (success) {
-      alert('配置保存成功');
-    } else {
-      alert('配置保存失败，请检查网络连接');
-    }
-  };
+  // 自动保存：已在 ConfigProvider 中实现，这里不再提供手动保存
 
   const handleReset = () => {
     if (window.confirm('确定要重置所有设置吗？重置后需要重新保存才会生效。')) {
@@ -96,8 +82,16 @@ export const BasicSettings: React.FC = () => {
     }
   };
 
+  // 城市 Chip 专用：支持 "全国/不限" 逻辑，与其他城市互斥
+  const handleCityChipsChange = (vals: string[]) => {
+    const cleaned = Array.from(new Set(vals.map(v => v.trim()).filter(Boolean)));
+    const hasAll = cleaned.some(v => v === '全国' || v === '不限');
+    const next = hasAll ? ['全国'] : cleaned;
+    updateConfig({ boss: { ...config.boss, cityCode: next } });
+  };
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-[#111418] dark:text-white text-3xl font-bold leading-tight tracking-[-0.02em]">
           基本投递设置
@@ -108,79 +102,57 @@ export const BasicSettings: React.FC = () => {
       </div>
 
       {/* 职位偏好 */}
-      <div className="flex flex-col gap-4 bg-white dark:bg-slate-900/70 p-6 rounded-xl border border-transparent dark:border-white/10 shadow-sm">
-        <h2 className="text-[#111418] dark:text-white text-xl font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-2 border-b border-slate-200 dark:border-white/10">
+      <div className="card p-6 flex flex-col gap-4">
+        <h2 className="text-[#111418] dark:text-white text-xl font-semibold leading-tight tracking-tight px-4 pb-3 pt-2 border-b border-slate-200 dark:border-white/10">
           职位偏好
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6 px-4 py-3">
-          <Input
+          <ChipInput
             label="职位名称/关键词"
-            tooltip="输入您期望的职位名称或关键词，用逗号分隔，例如 '前端开发, React'"
-            value={config.boss.keywords.join(', ')}
-            onChange={(e) => handleKeywordsChange(e.target.value)}
-            placeholder="例如：前端开发, React, Vue"
-            icon={<Settings size={18} />}
+            tooltip="输入后按 Enter 添加，或用逗号分隔，例如 '前端开发, React'"
+            values={config.boss.keywords}
+            onChange={(vals) => updateConfig({ boss: { ...config.boss, keywords: vals } })}
+            placeholder="例如：前端开发、React、Vue"
           />
 
-          <div className="flex flex-col min-w-40 flex-1">
-            <div className="flex items-center gap-2 pb-2">
-              <p className="text-[#111418] dark:text-white text-base font-medium leading-normal">
-                关键词扩展
-              </p>
-              <div className="tooltip">
-                <span className="material-symbols-outlined text-[#617589] dark:text-slate-400 cursor-help" style={{ fontSize: '18px' }}>
-                  help_outline
-                </span>
-                <span className="tooltiptext">启用后，机器人将自动扩展您的关键词，寻找更多相关职位。</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-4 h-12">
-              <label className="relative flex h-[31px] w-[51px] cursor-pointer items-center rounded-full border-none bg-[#f0f2f4] dark:bg-slate-800 p-0.5 has-[:checked]:justify-end has-[:checked]:bg-primary">
-                <div className="h-full w-[27px] rounded-full bg-white transition-transform" style={{ boxShadow: 'rgba(0, 0, 0, 0.1) 0px 2px 6px' }}></div>
-                <input
-                  checked={config.boss.enableAI}
-                  onChange={(e) => updateConfig({ boss: { ...config.boss, enableAI: e.target.checked } })}
-                  className="invisible absolute"
-                  type="checkbox"
-                />
-              </label>
-              <span className="text-[#617589] dark:text-slate-400 text-sm">启用智能扩展</span>
-            </div>
+          <div className="flex flex-col min-w-40 flex-1 justify-end">
+            <Switch
+              label="关键词扩展"
+              tooltip="启用后，机器人将自动扩展您的关键词，寻找更多相关职位。"
+              checked={config.boss.enableAI}
+              onChange={(v) => updateConfig({ boss: { ...config.boss, enableAI: v } })}
+            />
           </div>
         </div>
       </div>
 
       {/* 求职要求 */}
-      <div className="flex flex-col gap-4 bg-white dark:bg-slate-900/70 p-6 rounded-xl border border-transparent dark:border-white/10 shadow-sm">
-        <h2 className="text-[#111418] dark:text-white text-xl font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-2 border-b border-slate-200 dark:border-white/10">
+      <div className="card p-6 flex flex-col gap-4">
+        <h2 className="text-[#111418] dark:text-white text-xl font-semibold leading-tight tracking-tight px-4 pb-3 pt-2 border-b border-slate-200 dark:border-white/10">
           求职要求
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6 px-4 py-3">
-          <Input
+          <ChipInput
             label="地域"
-            tooltip="选择您希望工作的城市，可多选。"
-            value={config.boss.cityCode.join(', ')}
-            onChange={(e) => handleCityChange(e.target.value)}
-            placeholder="例如：北京, 上海, 深圳"
-            icon={<MapPin size={18} />}
+            tooltip="可输入多个城市，按 Enter 或用逗号分隔新增；支持输入“全国”（与其他城市互斥）。"
+            values={config.boss.cityCode}
+            onChange={handleCityChipsChange}
+            placeholder="例如：北京、上海、深圳"
           />
 
-          <Select
+          <NiceSelect
             label="经验"
             tooltip="选择您期望的职位工作经验要求。"
             value={config.boss.experience[0] || '不限'}
-            options={experienceOptions}
             onChange={handleExperienceChange}
-            icon={<Briefcase size={18} />}
+            options={experienceOptions}
           />
 
           <div className="flex flex-col min-w-40 flex-1">
             <div className="flex items-center gap-2 pb-2">
-              <p className="text-[#111418] dark:text-white text-base font-medium leading-normal">
-                薪资 (千/月)
-              </p>
+              <p className="text-[#111418] dark:text-white text-base font-medium leading-normal">薪资 (千/月)</p>
               <div className="tooltip">
                 <span className="material-symbols-outlined text-[#617589] dark:text-slate-400 cursor-help" style={{ fontSize: '18px' }}>
                   help_outline
@@ -188,39 +160,37 @@ export const BasicSettings: React.FC = () => {
                 <span className="tooltiptext">设置您期望的月薪范围，单位为千元（k）。留空表示不限。</span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#111418] dark:text-white focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-[#dbe0e6] dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-primary dark:focus:border-primary h-12 placeholder:text-[#617589] p-3 text-base font-normal leading-normal"
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="最低"
+                type="number"
+                value={(config.boss.expectedSalary[0] || '').toString()}
+                onChange={(e) => handleSalaryChange(e.currentTarget.value, config.boss.expectedSalary[1]?.toString() || '')}
                 placeholder="最低"
-                type="number"
-                value={config.boss.expectedSalary[0] || ''}
-                onChange={(e) => handleSalaryChange(e.target.value, config.boss.expectedSalary[1]?.toString() || '')}
               />
-              <span className="text-[#617589] dark:text-slate-400">-</span>
-              <input
-                className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#111418] dark:text-white focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-[#dbe0e6] dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-primary dark:focus:border-primary h-12 placeholder:text-[#617589] p-3 text-base font-normal leading-normal"
-                placeholder="最高"
+              <Input
+                label="最高"
                 type="number"
-                value={config.boss.expectedSalary[1] || ''}
-                onChange={(e) => handleSalaryChange(config.boss.expectedSalary[0]?.toString() || '', e.target.value)}
+                value={(config.boss.expectedSalary[1] || '').toString()}
+                onChange={(e) => handleSalaryChange(config.boss.expectedSalary[0]?.toString() || '', e.currentTarget.value)}
+                placeholder="最高"
               />
             </div>
           </div>
 
-          <Select
+          <NiceSelect
             label="学历"
             tooltip="选择职位要求的最低学历。"
             value={config.boss.degree[0] || '不限'}
-            options={degreeOptions}
             onChange={handleDegreeChange}
-            icon={<GraduationCap size={18} />}
+            options={degreeOptions}
           />
         </div>
       </div>
 
       {/* 公司偏好 */}
-      <div className="flex flex-col gap-4 bg-white dark:bg-slate-900/70 p-6 rounded-xl border border-transparent dark:border-white/10 shadow-sm">
-        <h2 className="text-[#111418] dark:text-white text-xl font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-2 border-b border-slate-200 dark:border-white/10">
+      <div className="card p-6 flex flex-col gap-4">
+        <h2 className="text-[#111418] dark:text-white text-xl font-semibold leading-tight tracking-tight px-4 pb-3 pt-2 border-b border-slate-200 dark:border-white/10">
           公司偏好
         </h2>
 
@@ -251,12 +221,6 @@ export const BasicSettings: React.FC = () => {
           className="flex w-full sm:w-auto min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-11 px-6 bg-transparent text-[#617589] dark:text-slate-400 text-sm font-bold leading-normal tracking-[0.015em] hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         >
           <span className="truncate">重置</span>
-        </button>
-        <button
-          onClick={handleSave}
-          className="flex w-full sm:w-auto min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-11 px-6 bg-primary text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-primary/90 transition-colors"
-        >
-          <span className="truncate">保存设置</span>
         </button>
       </div>
     </div>

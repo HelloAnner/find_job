@@ -64,6 +64,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store") // 前端自动保存/拉取下，禁用缓存更稳
 	if err := json.NewEncoder(w).Encode(s.configUpdater.GetConfig()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -128,6 +129,7 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
