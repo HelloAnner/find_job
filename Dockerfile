@@ -8,12 +8,16 @@ WORKDIR /src
 RUN echo 'deb https://mirrors.aliyun.com/debian/ trixie main contrib non-free non-free-firmware' > /etc/apt/sources.list \
     && echo 'deb https://mirrors.aliyun.com/debian/ trixie-updates main contrib non-free non-free-firmware' >> /etc/apt/sources.list \
     && echo 'deb https://mirrors.aliyun.com/debian-security trixie-security main contrib non-free non-free-firmware' >> /etc/apt/sources.list \
-    && apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+    && apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+# Build frontend
+RUN cd front && npm ci && npm run build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/boss ./
 
 # 预先安装 Playwright driver 和浏览器缓存，避免运行时重复下载
@@ -73,6 +77,7 @@ WORKDIR /app
 COPY --from=builder /out/boss /app/boss
 COPY --from=builder /out/playwright /opt/playwright
 COPY assets ./assets
+COPY --from=builder /src/front/dist ./front/dist
 COPY config.yaml ./config.yaml
 COPY .env ./.env
 

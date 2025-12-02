@@ -64,6 +64,7 @@ build_and_start_single_container() {
   CONTAINER_ID=$(docker run -d \
     --name boss-runner \
     --restart unless-stopped \
+    -p 48888:48888 \
     -v "$ROOT_DIR/config.yaml:/app/config.yaml" \
     -v "$ROOT_DIR/.env:/app/.env" \
     -v "$ROOT_DIR/data:/app/data" \
