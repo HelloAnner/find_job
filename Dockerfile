@@ -1,6 +1,10 @@
 # 单镜像架构 - 集成Go应用和Playwright环境
 FROM m.daocloud.io/docker.io/library/golang:1.25.3 AS builder
 
+# 使构建过程感知目标平台
+ARG TARGETOS
+ARG TARGETARCH
+
 ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}
 
@@ -15,7 +19,8 @@ RUN go mod download
 COPY . .
 # Build frontend
 RUN cd front && npm ci && npm run build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/boss ./
+# 针对目标平台编译（由 buildx 传入 TARGETOS/TARGETARCH）
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o /out/boss ./
 
 # 预先安装 Playwright driver 和浏览器缓存，避免运行时重复下载
 ENV PLAYWRIGHT_DRIVER_PATH=/out/playwright/driver \
