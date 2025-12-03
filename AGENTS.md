@@ -448,3 +448,67 @@
 - 后端：`internal/config/config.go` 移除对应字段；`internal/boss/app.go` 始终以 Headless 模式启动浏览器，并在缺少/失效 Cookie 时直接报错提示本地导出 Cookie 文件；`loginWithVisibleWindow`/`scanLogin` 等可视化逻辑全部删除。
 - 配置/文档：`config.yaml`、`README.md`、`deploy.md`、本文件相关段落统一说明“仅支持后台静默 + Cookie 文件”，不再提及 `boss.openWindows`。
 - 验证：`(cd front && npm run build)` 与 `go test` 非必须；已执行 `cd front && npm run build`，并运行 `gofmt` 格式化 Go 代码。
+
+## 2025-12-03 输入组件文字重叠修复
+
+- 背景：多处输入类组件（特别是薪资上限/下限）采用浮动标签实现，聚焦/输入后标签与文字重叠；“公司规模”多选下拉在显示已选项时也会发生文字挤压，用户反馈体验较差。
+- 关键改动：
+  1) `front/src/components/shared/Input.tsx`：移除浮动标签逻辑，改为“顶部标签 + 普通占位符”的稳定布局；输入框仍保持圆角/描边/焦点态，彻底消除浮动标签与内容叠加问题。
+  2) `front/src/components/shared/MultiSelect.tsx`：触发按钮改为 `min-h-[3rem]` + `py-2`，上方显示“已选择 N 项”，下方用可换行的 Chip 列表展示前三项（其余用 `+X` 表示），防止文本在按钮内堆叠。
+- 坑点：Input 组件现在默认显示顶部标签，如需完全隐藏请传空字符串；MultiSelect 的按钮高度增加，如需更紧凑可在外层容器自行覆盖。
+- 验证：`cd front && npm run build` 成功，确保改动未引入构建错误。
+
+## 2025-12-03 公司规模/融资阶段“不限”选项补齐
+
+- 背景：UI 约定“公司规模”与“融资阶段”的第一项需为“不限”，但选项数组缺失，导致下拉列表首项不是“不限”，同时无法单选“不限”。
+- 变更：`front/src/pages/BasicSettings.tsx` 为 `scaleOptions`、`stageOptions` 追加 `{ value: '不限', label: '不限' }` 并置顶；`handleScaleChange`/`handleStageChange` 新增互斥逻辑，当选择具体选项时自动移除“不限”，仅保留一个“不限”或若干具体值，避免混合状态。
+- 验证：`cd front && npm run build` 通过；前端刷新后可见两个多选下拉的首项均为“不限”，且选择具体选项会自动取消“不限”。
+
+## 2025-12-03 下拉面板背景不透明
+
+- 背景：默认暗色主题下，Select/MultiSelect 的下拉面板使用 `var(--surface)`（半透明），叠加正文时文字会重影；需要保持实体背景避免与页内容混合。
+- 改动：
+  1) `front/src/components/shared/Select.tsx`：触发按钮与面板背景统一为 `bg-white dark:bg-[#0f1922]`，并加强阴影，保证弹层视觉独立。
+  2) `front/src/components/shared/MultiSelect.tsx`：按钮、面板、搜索框背景同样换成实体色，额外加 `shadow-2xl`，防止列表与底部内容融合。
+- 验证：`cd front && npm run build` 通过；下拉面板完全不透明，文字不会与下层重叠。
+
+## 2025-12-03 主题切换按钮 + 明亮模式
+
+- 背景：只有暗色主题且默认强制 `dark`，无法切换明亮模式；需要右上角小图标快速切换，并根据系统偏好自动初始化。
+- 改动：
+  1) `front/src/components/ThemeToggle.tsx`（新增）——负责读取系统/本地偏好并渲染右上角浮动按钮，点击后在暗/亮之间切换并记忆选择。
+  2) `front/src/components/Layout/Layout.tsx` 引入 `ThemeToggle`，保证所有页面全局可见。
+  3) `front/index.html` 移除固定 `class="dark"`，加上首屏脚本在 React 启动前应用合适主题，避免闪烁。
+- 验证：`cd front && npm run build` 通过；刷新后保持最近一次选择，若未手动选择则跟随系统暗/亮模式自动切换。
+
+## 2025-12-03 企业微信机器人配置前端化
+
+- 背景：后端 `bot` 配置控制企业微信机器人通知（`is_send` + Markdown 模板），但前端页面未明确呈现，导致无法在 UI 中编辑。
+- 改动：
+  1) `front/src/pages/AISettings.tsx` 新增“企业微信机器人通知”分节，展示推送开关 + 模板 textarea，并列出可用占位符（jobLink/companyName/jobArea/salary/greeting/status/timestamp）供参考；强调需在环境变量 `HOOK_URL` 配置 Webhook。
+  2) 复用现有 `Switch`/textarea，保持自动保存逻辑。
+- 验证：`cd front && npm run build`；在页面中切换“启用通知”、编辑模板后约 0.8s 自动保存到 `config.yaml`，并能正确展示所有占位符说明。
+
+## 2025-12-03 明亮模式文字对比增强
+
+- 背景：主题切换上线后，明亮模式下部分标签（Field/ChipInput）仍使用偏亮的文字颜色（#e6eef7），与白色背景对比度过低，影响可读性。
+- 改动：
+  1) `front/src/components/shared/Field.tsx` 的标签/提示色分别调整为 `text-[#0f172a]` 与 `text-[#5f6b76]`，暗色模式保留原样；
+  2) `front/src/components/shared/ChipInput.tsx` 顶部 label 同步使用更深的文字色，确保在浅底上可读。
+- 验证：`cd front && npm run build`，在明亮主题下查看设置页，字段标题/Chip 标签描述均能清晰可见。
+
+## 2025-12-03 关键词扩展行内展示
+
+- 背景：`BasicSettings` 中“关键词扩展”原本呈现为三行（标题、提示、开关行内再含“启用”文本），视觉冗余。
+- 改动：
+  1) `front/src/pages/BasicSettings.tsx` 将该项改为单独的行内卡片：左侧展示标题+提示，右侧直接放开关；
+  2) `front/src/components/shared/Switch.tsx` 增加 `hideLabel`，允许隐藏开关文字但保留 ARIA label，保持统一交互。
+- 验证：`cd front && npm run build`，页面中该行仅剩一段说明 + 右侧开关，再无多余“启用”字样。
+
+## 2025-12-03 页面抬头居中与品牌配色修复
+
+- 背景：主内容区域（基本/高级/AI/凭证）顶部标题与描述在右侧内容区仍左对齐；同时侧边栏品牌 `find_jobs` 在明亮模式下仍使用浅色文字，难以辨识。
+- 改动：
+  1) `front/src/pages/BasicSettings.tsx`、`AdvancedSettings.tsx`、`AISettings.tsx`、`CredentialsSettings.tsx` 的页面标题块加入 `items-center text-center`，在主区域顶部统一居中展示；
+  2) `front/src/components/Layout/Sidebar.tsx` 将品牌文字改为 `text-[#0f172a] dark:text-white/90`（副标题 `text-[#5f6b76] dark:text-[#93a4b3]`），明亮模式下对比度正常。
+- 验证：`cd front && npm run build`；切换至明亮主题时侧边栏标题可读，主内容顶部标题/描述居中对齐。

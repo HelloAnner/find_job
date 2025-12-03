@@ -19,8 +19,8 @@ export const Sidebar: React.FC = () => {
           <span className="material-symbols-outlined" style={{ fontSize: 20 }}>work</span>
         </div>
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-white/90">find_jobs</div>
-          <div className="text-xs text-[#93a4b3]">配置面板</div>
+          <div className="text-sm font-semibold text-[#0f172a] dark:text-white/90">find_jobs</div>
+          <div className="text-xs text-[#5f6b76] dark:text-[#93a4b3]">配置面板</div>
         </div>
       </div>
 

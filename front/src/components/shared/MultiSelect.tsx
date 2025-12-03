@@ -111,25 +111,28 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
           aria-expanded={open}
           onClick={() => setOpen(o => !o)}
           onKeyDown={onKeyDownBtn}
-          className="flex w-full items-center justify-between h-12 rounded-xl px-3 text-left bg-[var(--surface)] ring-1 ring-slate-200/70 dark:ring-white/10 text-[#111418] dark:text-white transition-shadow focus:outline-none focus:ring-2 focus:ring-primary/40"
+          className="flex w-full items-center justify-between min-h-[3rem] rounded-xl px-3 py-2 text-left bg-white dark:bg-[#0f1922] ring-1 ring-slate-200/70 dark:ring-white/10 text-[#111418] dark:text-white transition-shadow focus:outline-none focus:ring-2 focus:ring-primary/40"
         >
-          <span className="flex items-center gap-2 min-w-0">
+          <span className="flex flex-col gap-1 min-w-0">
             {values.length === 0 ? (
-              <span className="text-[#7a8a9a] truncate">{placeholder}</span>
+              <span className="text-[#7a8a9a] text-sm leading-5">{placeholder}</span>
             ) : (
-              <span className="flex flex-wrap items-center gap-1 truncate">
-                {values.slice(0, 3).map(v => {
-                  const o = options.find(x => x.value === v);
-                  return (
-                    <span key={v} className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 h-6 text-xs text-slate-700 dark:text-slate-200">
-                      {o?.label || v}
-                    </span>
-                  );
-                })}
-                {values.length > 3 && (
-                  <span className="text-xs text-[#7a8a9a]">+{values.length - 3}</span>
-                )}
-              </span>
+              <>
+                <span className="text-xs text-[#93a4b3] uppercase tracking-wide">已选择 {values.length} 项</span>
+                <span className="flex flex-wrap items-center gap-1 text-sm leading-5">
+                  {values.slice(0, 3).map(v => {
+                    const o = options.find(x => x.value === v);
+                    return (
+                      <span key={v} className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 h-6 text-xs text-slate-700 dark:text-slate-200 whitespace-nowrap">
+                        {o?.label || v}
+                      </span>
+                    );
+                  })}
+                  {values.length > 3 && (
+                    <span className="text-xs text-[#7a8a9a] whitespace-nowrap">+{values.length - 3}</span>
+                  )}
+                </span>
+              </>
             )}
           </span>
           <span className={`material-symbols-outlined text-[#617589] dark:text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} style={{ fontSize: 20 }}>expand_more</span>
@@ -142,7 +145,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
             role="listbox"
             aria-multiselectable
             onKeyDown={onKeyDownList}
-            className="absolute z-20 mt-2 w-full rounded-xl bg-[var(--surface)] shadow-lg ring-1 ring-slate-200/80 dark:ring-white/10 overflow-hidden animate-fade-in"
+            className="absolute z-20 mt-2 w-full rounded-xl bg-white dark:bg-[#0f1922] shadow-2xl shadow-slate-900/30 ring-1 ring-slate-200/80 dark:ring-white/10 overflow-hidden animate-fade-in"
           >
             {/* 顶部操作区 */}
             <div className="flex items-center gap-2 p-2 border-b border-slate-200/70 dark:border-white/10">
@@ -152,7 +155,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                     ref={searchRef}
                     value={query}
                     onChange={(e) => { setQuery(e.target.value); setFocusIdx(0); }}
-                    className="w-full h-9 rounded-lg bg-[var(--surface)] ring-1 ring-slate-200/70 dark:ring-white/10 px-2 text-sm placeholder:text-[#7a8a9a] focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full h-9 rounded-lg bg-white dark:bg-[#16212c] ring-1 ring-slate-200/70 dark:ring-white/10 px-2 text-sm placeholder:text-[#7a8a9a] focus:outline-none focus:ring-2 focus:ring-primary/40"
                     placeholder="搜索选项…"
                   />
                 </div>

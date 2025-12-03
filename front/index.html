@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" class="dark">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -8,6 +8,24 @@
     <!-- 自托管字体与图标：已由 index.css 引入，无需远程加载 -->
     <link rel="preload" href="/fonts/inter/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/fonts/inter/InterVariable-Italic.woff2" as="font" type="font/woff2" crossorigin>
+    <script>
+      // 首屏渲染前根据本地或系统偏好设置主题，避免闪烁
+      (function() {
+        try {
+          var storageKey = 'find-jobs-theme';
+          var stored = localStorage.getItem(storageKey);
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = stored === 'light' || stored === 'dark' ? stored : (prefersDark ? 'dark' : 'light');
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (err) {
+          console.warn('theme init failed', err);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -27,6 +27,7 @@ const degreeOptions = [
 ];
 
 const scaleOptions = [
+  { value: '不限', label: '不限' },
   { value: '0-20人', label: '0-20人' },
   { value: '20-99人', label: '20-99人' },
   { value: '100-499人', label: '100-499人' },
@@ -36,6 +37,7 @@ const scaleOptions = [
 ];
 
 const stageOptions = [
+  { value: '不限', label: '不限' },
   { value: '未融资', label: '未融资' },
   { value: '天使轮', label: '天使轮' },
   { value: 'A轮', label: 'A轮' },
@@ -60,11 +62,19 @@ export const BasicSettings: React.FC = () => {
   };
 
   const handleScaleChange = (values: string[]) => {
-    updateConfig({ boss: { ...config.boss, scale: values } });
+    let cleaned = values;
+    if (values.includes('不限')) {
+      cleaned = values.length === 1 ? ['不限'] : values.filter(v => v !== '不限');
+    }
+    updateConfig({ boss: { ...config.boss, scale: cleaned } });
   };
 
   const handleStageChange = (values: string[]) => {
-    updateConfig({ boss: { ...config.boss, stage: values } });
+    let cleaned = values;
+    if (values.includes('不限')) {
+      cleaned = values.length === 1 ? ['不限'] : values.filter(v => v !== '不限');
+    }
+    updateConfig({ boss: { ...config.boss, stage: cleaned } });
   };
 
   const handleSalaryChange = (min: string, max: string) => {
@@ -88,7 +98,7 @@ export const BasicSettings: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-10">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1 items-center text-center">
         <h1 className="text-2xl font-semibold tracking-tight">基本投递设置</h1>
         <p className="text-sm text-[#7a8a9a]">保持简约但参数齐全，保障机器人稳定高效投递。</p>
       </div>
@@ -104,9 +114,13 @@ export const BasicSettings: React.FC = () => {
           />
         </Field>
 
-        <Field label="关键词扩展" hint="启用后自动扩展近义词与相关词">
-          <Switch label="启用" checked={config.boss.enableAI} onChange={(v) => updateConfig({ boss: { ...config.boss, enableAI: v } })} />
-        </Field>
+        <div className="p-5 border-b border-slate-200/70 dark:border-white/10 last:border-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-1">
+            <div className="text-sm font-semibold text-[#0f172a] dark:text-white leading-normal">关键词扩展</div>
+            <div className="text-xs text-[#5f6b76] dark:text-[#93a4b3] leading-normal">启用后自动扩展近义词与相关词</div>
+          </div>
+          <Switch label="关键词扩展" hideLabel checked={config.boss.enableAI} onChange={(v) => updateConfig({ boss: { ...config.boss, enableAI: v } })} />
+        </div>
       </Section>
 
       {/* 求职要求 */}

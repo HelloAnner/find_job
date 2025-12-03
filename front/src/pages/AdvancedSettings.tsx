@@ -32,7 +32,7 @@ export const AdvancedSettings: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-10">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1 items-center text-center">
         <h1 className="text-2xl font-semibold tracking-tight">高级行为设置</h1>
         <p className="text-sm text-[#7a8a9a]">更细粒度地控制机器人的运行方式。</p>
       </div>

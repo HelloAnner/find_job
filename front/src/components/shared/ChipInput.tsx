@@ -134,7 +134,7 @@ export const ChipInput: React.FC<ChipInputProps> = ({
       {/* 顶部：标题与操作 */}
       <div className="flex items-center justify-between pb-2">
         <div className="flex items-center gap-2">
-          <p className="text-[#e6eef7] dark:text-white/90 text-sm font-medium leading-normal">{label}</p>
+          <p className="text-sm font-semibold text-[#0f172a] dark:text-white/90 leading-normal">{label}</p>
           {tooltip && (
             <div className="tooltip">
               <span className="material-symbols-outlined text-[#93a4b3] cursor-help" style={{ fontSize: 18 }}>help_outline</span>

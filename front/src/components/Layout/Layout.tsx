@@ -1,6 +1,7 @@
 import React from 'react';
 import { Sidebar } from './Sidebar';
 import { SaveIndicator } from '../SaveIndicator';
+import { ThemeToggle } from '../ThemeToggle';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,6 +12,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     <div className="min-h-screen bg-background-light dark:bg-background-dark">
       {/* 固定左侧边栏 */}
       <Sidebar />
+      <ThemeToggle />
 
       {/* 右侧内容区域：单独滚动，左侧保持固定 */}
       <main className="ml-64 h-screen overflow-y-auto bg-background-light dark:bg-background-dark">

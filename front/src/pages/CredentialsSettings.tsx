@@ -133,7 +133,7 @@ export const CredentialsSettings: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-10">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1 items-center text-center">
         <h1 className="text-2xl font-semibold tracking-tight">登录凭证管理</h1>
         <p className="text-sm text-[#7a8a9a]">上传和管理您的登录凭证文件，确保机器人能够正常访问招聘平台。</p>
       </div>
