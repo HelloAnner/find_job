@@ -111,7 +111,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
           aria-expanded={open}
           onClick={() => setOpen(o => !o)}
           onKeyDown={onKeyDownBtn}
-          className="flex w-full items-center justify-between h-12 rounded-xl px-3 text-left bg-white dark:bg-slate-900/70 ring-1 ring-slate-200/70 dark:ring-white/10 text-[#111418] dark:text-white transition-shadow focus:outline-none focus:ring-2 focus:ring-primary/40"
+          className="flex w-full items-center justify-between h-12 rounded-xl px-3 text-left bg-[var(--surface)] ring-1 ring-slate-200/70 dark:ring-white/10 text-[#111418] dark:text-white transition-shadow focus:outline-none focus:ring-2 focus:ring-primary/40"
         >
           <span className="flex items-center gap-2 min-w-0">
             {values.length === 0 ? (
@@ -142,7 +142,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
             role="listbox"
             aria-multiselectable
             onKeyDown={onKeyDownList}
-            className="absolute z-20 mt-2 w-full rounded-xl bg-white dark:bg-slate-900/95 shadow-lg ring-1 ring-slate-200/80 dark:ring-white/10 overflow-hidden animate-fade-in"
+            className="absolute z-20 mt-2 w-full rounded-xl bg-[var(--surface)] shadow-lg ring-1 ring-slate-200/80 dark:ring-white/10 overflow-hidden animate-fade-in"
           >
             {/* 顶部操作区 */}
             <div className="flex items-center gap-2 p-2 border-b border-slate-200/70 dark:border-white/10">
@@ -152,7 +152,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                     ref={searchRef}
                     value={query}
                     onChange={(e) => { setQuery(e.target.value); setFocusIdx(0); }}
-                    className="w-full h-9 rounded-lg bg-white dark:bg-slate-900/70 ring-1 ring-slate-200/70 dark:ring-white/10 px-2 text-sm placeholder:text-[#7a8a9a] focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full h-9 rounded-lg bg-[var(--surface)] ring-1 ring-slate-200/70 dark:ring-white/10 px-2 text-sm placeholder:text-[#7a8a9a] focus:outline-none focus:ring-2 focus:ring-primary/40"
                     placeholder="搜索选项…"
                   />
                 </div>

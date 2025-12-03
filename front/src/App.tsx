@@ -3,6 +3,7 @@ import { Layout } from './components/Layout/Layout';
 import { BasicSettings } from './pages/BasicSettings';
 import { AdvancedSettings } from './pages/AdvancedSettings';
 import { AISettings } from './pages/AISettings';
+import { CredentialsSettings } from './pages/CredentialsSettings';
 import { ConfigProvider } from './contexts/ConfigContext';
 import './App.css';
 
@@ -16,6 +17,7 @@ function App() {
             <Route path="/basic" element={<BasicSettings />} />
             <Route path="/advanced" element={<AdvancedSettings />} />
             <Route path="/ai" element={<AISettings />} />
+            <Route path="/credentials" element={<CredentialsSettings />} />
             <Route path="*" element={<Navigate to="/basic" replace />} />
           </Routes>
         </Layout>

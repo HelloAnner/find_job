@@ -28,7 +28,7 @@ export const Input: React.FC<InputProps> = ({
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         className={`
-          peer flex w-full min-w-0 h-12 rounded-xl bg-white dark:bg-slate-900/70
+          peer flex w-full min-w-0 h-12 rounded-xl bg-[var(--surface)]
           ring-1 ring-slate-200/70 dark:ring-white/10 px-3 text-base text-[#111418] dark:text-white
           placeholder-transparent focus:outline-none focus:ring-2 focus:ring-primary/40 transition-shadow disabled:opacity-60
           ${icon ? 'pl-10' : ''} ${className}
@@ -41,7 +41,7 @@ export const Input: React.FC<InputProps> = ({
           pointer-events-none absolute left-3 ${icon ? 'pl-7' : ''}
           top-1/2 -translate-y-1/2 text-sm text-[#7a8a9a] dark:text-slate-400 transition-all
           peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2
-          ${focused || hasValue ? 'top-0 -translate-y-1/2 text-xs bg-white dark:bg-slate-900/70 px-1 rounded' : ''}
+          ${focused || hasValue ? 'top-0 -translate-y-1/2 text-xs bg-[var(--surface)] px-1 rounded' : ''}
         `}>
           {label}
         </span>

@@ -159,7 +159,7 @@ export const ChipInput: React.FC<ChipInputProps> = ({
           onKeyDown={onKeyDown}
           onFocus={() => setShowSuggestions(input.length > 0 && suggestions.length > 0)}
           disabled={isMaxReached}
-          className="w-full h-12 rounded-xl bg-white/90 dark:bg-[#0f1922] ring-1 ring-slate-200/70 dark:ring-white/10 px-3 text-sm text-[#111418] dark:text-white placeholder:text-[#93a4b3] focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:cursor-not-allowed"
+          className="w-full h-12 rounded-xl bg-[var(--surface)] ring-1 ring-slate-200/70 dark:ring-white/10 px-3 text-sm text-[#111418] dark:text-white placeholder:text-[#93a4b3] focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:cursor-not-allowed"
           placeholder={isMaxReached ? '已达到最大数量' : placeholder}
         />
         {input && !isMaxReached && (
@@ -170,7 +170,7 @@ export const ChipInput: React.FC<ChipInputProps> = ({
 
         {/* 建议下拉：跟随输入框 */}
         {showSuggestions && filteredSuggestions.length > 0 && (
-          <div className="absolute left-0 right-0 mt-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg max-h-40 overflow-y-auto z-10 animate-fade-in">
+          <div className="absolute left-0 right-0 mt-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-[var(--surface)] shadow-lg max-h-40 overflow-y-auto z-10 animate-fade-in">
             {filteredSuggestions.map((s, idx) => (
               <div key={`${s}-${idx}`} onClick={() => selectSuggestion(s)} className="px-3 py-2 text-sm cursor-pointer hover:bg-primary/10 dark:hover:bg-primary/20 flex items-center gap-2 transition-colors">
                 <span className="material-symbols-outlined text-slate-400" style={{ fontSize: 14 }}>add</span>

@@ -34,7 +34,7 @@ export const Textarea: React.FC<TextareaProps> = ({
           </div>
         )}
         <textarea
-          className={`flex w-full min-w-0 flex-1 resize-y overflow-hidden rounded-xl text-[#111418] dark:text-white placeholder:text-[#617589] bg-white dark:bg-slate-900/70 ring-1 ring-slate-200/70 dark:ring-white/10 focus:outline-none focus:ring-2 focus:ring-primary/40 min-h-32 p-[15px] text-[15px] leading-relaxed transition-shadow ${icon ? 'pl-10' : ''} ${className}`}
+          className={`flex w-full min-w-0 flex-1 resize-y overflow-hidden rounded-xl text-[#111418] dark:text-white placeholder:text-[#617589] bg-[var(--surface)] ring-1 ring-slate-200/70 dark:ring-white/10 focus:outline-none focus:ring-2 focus:ring-primary/40 min-h-32 p-[15px] text-[15px] leading-relaxed transition-shadow ${icon ? 'pl-10' : ''} ${className}`}
           {...props}
         />
       </div>

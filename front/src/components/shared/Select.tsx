@@ -101,7 +101,7 @@ export const Select: React.FC<SelectProps> = ({
           onKeyDown={onKeyDownBtn}
           className={`
             flex w-full items-center justify-between h-12 rounded-xl px-3 text-left
-            bg-white dark:bg-slate-900/70 ring-1 ring-slate-200/70 dark:ring-white/10
+            bg-[var(--surface)] ring-1 ring-slate-200/70 dark:ring-white/10
             text-[#111418] dark:text-white transition-shadow focus:outline-none focus:ring-2 focus:ring-primary/40
             ${className}
           `}
@@ -125,7 +125,7 @@ export const Select: React.FC<SelectProps> = ({
             role="listbox"
             aria-activedescendant={options[focusIdx]?.value}
             onKeyDown={onKeyDownList}
-            className="absolute z-20 mt-2 w-full rounded-xl bg-white dark:bg-slate-900/95 shadow-lg ring-1 ring-slate-200/80 dark:ring-white/10 max-h-64 overflow-auto animate-fade-in"
+            className="absolute z-20 mt-2 w-full rounded-xl bg-[var(--surface)] shadow-lg ring-1 ring-slate-200/80 dark:ring-white/10 max-h-64 overflow-auto animate-fade-in"
           >
             {options.map((opt, idx) => {
               const active = idx === focusIdx;

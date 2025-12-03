@@ -56,7 +56,7 @@ func main() {
 	}
 
 	// Start HTTP server on port 38888
-	server := api.NewServer("config.yaml", cm, 38888)
+	server := api.NewServer("config.yaml", "data/boss/browser_cookie.txt", cm, 38888)
 	go func() {
 		if err := server.Start(); err != nil {
 			log.Printf("HTTP服务器启动失败: %v", err)

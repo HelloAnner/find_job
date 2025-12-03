@@ -116,7 +116,7 @@ export const CheckboxGroup: React.FC<CheckboxGroupProps> = ({
               className={`
                 group relative flex items-center gap-3 p-3 rounded-xl cursor-pointer select-none
                 transition-all duration-200
-                ${isChecked ? 'bg-gradient-to-r from-primary/10 to-primary/0 dark:from-primary/20 dark:to-transparent ring-2 ring-primary/30' : 'bg-slate-50 dark:bg-slate-900/30 hover:bg-slate-100 dark:hover:bg-slate-800/50'}
+                ${isChecked ? 'bg-gradient-to-r from-primary/10 to-primary/0 dark:from-primary/20 dark:to-transparent ring-2 ring-primary/30' : 'bg-[var(--surface)] hover:bg-slate-100 dark:hover:bg-slate-800/50'}
                 ${isHovered ? 'scale-[1.02] shadow-md' : ''}
               `}
               onMouseEnter={() => setHoveredOption(option.value)}
@@ -130,7 +130,7 @@ export const CheckboxGroup: React.FC<CheckboxGroupProps> = ({
                   checked={isChecked}
                   onChange={(e) => handleChange(option.value, e.target.checked)}
                 />
-                <div className={`${isChecked ? 'bg-primary border-primary scale-110' : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 group-hover:border-primary/50'} w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200`}>
+                <div className={`${isChecked ? 'bg-primary border-primary scale-110' : 'bg-[var(--surface)] dark:bg-slate-800 border-slate-300 dark:border-slate-600 group-hover:border-primary/50'} w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200`}>
                   {isChecked && (
                     <svg
                       className="w-3 h-3 text-white animate-scale-in"
