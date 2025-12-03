@@ -512,3 +512,9 @@
   1) `front/src/pages/BasicSettings.tsx`、`AdvancedSettings.tsx`、`AISettings.tsx`、`CredentialsSettings.tsx` 的页面标题块加入 `items-center text-center`，在主区域顶部统一居中展示；
   2) `front/src/components/Layout/Sidebar.tsx` 将品牌文字改为 `text-[#0f172a] dark:text-white/90`（副标题 `text-[#5f6b76] dark:text-[#93a4b3]`），明亮模式下对比度正常。
 - 验证：`cd front && npm run build`；切换至明亮主题时侧边栏标题可读，主内容顶部标题/描述居中对齐。
+
+## 2025-12-03 README 增补许可证说明
+
+- 背景：README 末尾缺少对仓库 LICENSE（Apache 2.0）的解释，外部读者不易了解使用限制。
+- 改动：README 底部新增“许可证”小节，概述 Apache 2.0 的用途、再发行要求与免责声明，并链接到 `LICENSE` 文件。
+- 验证：无需构建；Markdown 渲染正常，链接指向仓库根的 LICENSE。
