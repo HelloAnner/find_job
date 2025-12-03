@@ -46,7 +46,7 @@
 - `front/`：Vite + React 前端；开发端口 3000，生产构建产物在 `front/dist`。
 - `assets/`：静态资源（城市/行业编码、示例简历等）。
 - `data/`：运行期数据（黑名单、Cookie、统计）。
-- `Dockerfile` / `start.sh`：可选的单镜像运行与一键脚本。
+- `Dockerfile` / `scripts/start.sh`：可选的单镜像运行与一键脚本。
 
 ## 配置文件
 - `config.yaml`：业务配置（关键词、城市、筛选、开关、上限与间隔等）。

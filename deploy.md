@@ -6,7 +6,14 @@
 
 ---
 
-## 1) Docker 一键启动（推荐）
+## 脚本角色对比
+- scripts/start.sh：源码 + Docker 的本地启动脚本；先在本机构建前端与镜像，再启动容器。适合本地开发/验证最新改动。
+- scripts/start-server.sh：纯 Docker + 私有 Hub 的服务器启动脚本；不会构建镜像，不需要源码/Node/Go，仅从仓库拉取镜像并运行，更适合服务器部署。详细见第 6 节。
+
+
+## 1) 本地一键启动（源码 + Docker，本机）
+
+对应脚本：`scripts/start.sh`（本机有源码，先构建前端与镜像，再启动容器）。
 
 前置要求：已安装并启动 Docker 守护进程。
 
@@ -22,7 +29,7 @@
 ### 1.2 一键脚本
 
 ```bash
-./start.sh
+./scripts/start.sh
 ```
 
 - 脚本会：构建前端 → 构建镜像 → 以 `boss-runner` 名称启动容器并映射 38888 端口。
@@ -113,6 +120,8 @@ go run .
 ---
 
 ## 6) 使用私有 Hub（Gitea/自建 Registry）部署
+
+对应脚本：`scripts/start-server.sh`（纯 Docker + Hub 拉取；服务器无需源码/Node/Go，更适合服务器）。
 
 当你有一台私有镜像仓库（例如 Gitea Packages，或任意 Docker Registry v2）时，可以直接把本项目镜像推送到私有 Hub，并在服务器上“一键拉起”。本节不替换现有方案，仅作为补充。
 

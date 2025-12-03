@@ -225,7 +225,7 @@
     - 启动后端：`go run .`（服务端口 38888，提供静态资源与 `/api`）。
   - 开发模式：后端 `go run .`（38888）+ 前端 `(cd front && npm run dev)`（3000，已代理 `/api`）。
   - 生产模式：`go build -o boss ./` 后直接运行 `./boss`。
-  - Docker（可选）：`./start.sh` 一键构建运行，或 `docker build` + `docker run`。
+  - Docker（可选）：`./scripts/start.sh` 一键构建运行，或 `docker build` + `docker run`。
   - 首次登录两种路径：
     1) `boss.openWindows: true` 可视化扫码，生成 `data/boss/cookie.json`；
     2) 直接提供 `data/boss/browser_cookie.txt` 或 `data/boss/cookie.json`。
@@ -237,7 +237,7 @@
 
 ### 验证
 - 本机：按文档步骤可启动并访问 `http://localhost:38888`；前端在 ~0.8s 自动保存配置到 `config.yaml`。
-- Docker：`./start.sh` 完成构建与启动，`docker logs -f boss-runner` 可见投递日志。
+- Docker：`./scripts/start.sh` 完成构建与启动，`docker logs -f boss-runner` 可见投递日志。
 
 ## 2025-12-02 README 精简重写（介绍/流程/原理/部署入口/目录）
 
@@ -257,12 +257,12 @@
 
 - 目的：按你的要求，优先介绍 Docker 启动方式，源码启动放到其后；减少首次上手成本。
 - 改动：
-  - 重写 `deploy.md`：第 1 节为“Docker 一键启动（推荐）”，提供 `./start.sh` 与等价手动命令；
+  - 重写 `deploy.md`：第 1 节为“Docker 一键启动（推荐）”，提供 `./scripts/start.sh` 与等价手动命令；
   - 将“基于源码运行/开发模式/常见问题/目录速查”置于其后；
   - `README.md` 的“部署与启动”小节改为“优先使用 Docker 一键脚本，详见 deploy.md”。
 - 坑点：容器默认无头运行，必须先准备 Cookie（`data/boss/browser_cookie.txt` 或 `data/boss/cookie.json`）。
 - 验证：
-  - 本地执行 `./start.sh` 正常构建并启动容器；`docker logs -f boss-runner` 能看到“投递完成 | 岗位：”日志。
+  - 本地执行 `./scripts/start.sh` 正常构建并启动容器；`docker logs -f boss-runner` 能看到“投递完成 | 岗位：”日志。
 
 ## 2025-12-02 README 增补“前端页面”与截图
 
@@ -271,3 +271,36 @@
   - `README.md` 新增「前端页面」小节，说明布局、模块、交互（自动保存/Chip 输入/表单基线）与保存指示；
   - 内嵌图片：`![配置页面预览](images/config.png)`。
 - 验证：GitHub/本地渲染正常，图片路径有效；与现有“部署与启动”“目录结构”内容不冲突。
+
+
+## 2025-12-03 脚本迁移到 scripts/ 并修复前端依赖构建
+
+- 目标：将仓库根的 `start.sh` 迁移到 `scripts/start.sh`，并解决一键脚本构建前端时报缺依赖/类型错误的问题，保证“开箱即用”。
+
+### 变更
+1) 脚本迁移与兼容
+   - 新位置：`scripts/start.sh`（新增）。
+   - 兼容入口：保留根目录 `start.sh` 作为薄包装，转发到 `scripts/start.sh`，避免历史路径失效。
+   - 路径健壮性：脚本内部使用 `REPO_ROOT`（为 `scripts/..`）定位仓库根，挂载/构建均从根路径解析。
+2) 前端依赖安装策略
+   - 始终执行 `npm ci --no-audit --no-fund` 后再 `npm run build`，杜绝 `node_modules` 残留导致的“找不到模块/类型”。
+   - 解决报错：`react-router-dom`、`axios`、`@vitejs/plugin-react-swc` 未找到；以及因类型缺失衍生的 `isActive implicitly has an 'any' type`。
+3) 文档更新
+   - `deploy.md`：`./start.sh` 改为 `./scripts/start.sh`。
+   - `README.md`：目录速查中 `start.sh` 改为 `scripts/start.sh`。
+
+### 原因与坑点
+- 触发条件：之前脚本仅在 `node_modules` 不存在时才安装依赖；若目录存在但缺少新增依赖（例如引入了 `react-router-dom` 之后未重新安装），就会在 `npm run build` 阶段报 TS2307。
+- 解决思路：以锁文件为准每次 `npm ci`，构建时间增加很少，但换来确定性与稳定性。
+
+### 验证
+- 本机验证：`(cd front && npm ci && npm run build)` 成功，产物在 `front/dist`；随后 `scripts/start.sh` 能完成镜像构建并启动容器。
+- 影响范围：仅脚本与文档；后端/前端源码未改业务逻辑。
+
+
+## 2025-12-03 deploy.md 明确两类一键脚本的使用场景
+- 说明调整：
+  - `scripts/start.sh` = 源码 + Docker 的本地启动（本机构建前端与镜像，再运行）。
+  - `scripts/start-server.sh` = 纯 Docker + Hub 的服务器启动（无源码；从私有仓库拉取并运行）。
+- 文档：在 `deploy.md` 顶部新增“脚本角色对比”，在第 1 节与第 6 节分别标注对应脚本，避免混淆。
+

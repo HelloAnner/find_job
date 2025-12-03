@@ -1,116 +1,15 @@
 #!/usr/bin/env bash
+# 兼容旧路径的启动脚本：转发到 scripts/start.sh
+# 保留该文件是为了避免已有说明/自动化失效；推荐改用 ./scripts/start.sh
 set -euo pipefail
 
-ROOT_DIR="$(cd -- "$(dirname "$0")" && pwd)"
-cd "$ROOT_DIR"
+SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+TARGET="${SCRIPT_DIR}/scripts/start.sh"
 
-log_info() {
-  printf '[start] %s\n' "$*"
-}
-
-require_cmd() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    log_info "缺少依赖: $1"
-    exit 1
-  fi
-}
-
-require_cmd docker
-require_cmd node
-require_cmd npm
-
-# 检测Docker守护进程是否运行
-if ! docker info >/dev/null 2>&1; then
-  log_info "Docker守护进程未运行，请先启动Docker"
+if [[ -x "$TARGET" ]]; then
+  echo "[start] NOTICE: 此入口已迁移到 scripts/start.sh（即将废弃当前路径）。"
+  exec "$TARGET" "$@"
+else
+  echo "[start] ERROR: 未找到 scripts/start.sh，请确认仓库是否完整。" >&2
   exit 1
 fi
-
-cleanup_stack() {
-  log_info "停止并删除已有容器/镜像…"
-  if docker ps -a --filter "name=boss-runner" --format "{{.Names}}" | grep -q "boss-runner"; then
-    docker stop boss-runner 2>/dev/null || true
-    docker rm boss-runner 2>/dev/null || true
-  fi
-}
-
-ensure_config() {
-  for file in config.yaml .env; do
-    if [ ! -e "$ROOT_DIR/$file" ]; then
-      log_info "缺少必需文件: $file"
-      exit 1
-    fi
-  done
-
-  # 检查cookie文件（支持json或txt格式）
-  if [ ! -e "$ROOT_DIR/data/boss/cookie.json" ] && [ ! -e "$ROOT_DIR/data/boss/browser_cookie.txt" ]; then
-    log_info "缺少cookie文件，请提供 data/boss/cookie.json 或 data/boss/browser_cookie.txt"
-    exit 1
-  fi
-}
-
-build_frontend() {
-  log_info "构建前端界面（确保最新效果）…"
-  cd "$ROOT_DIR/front"
-
-  # 安装依赖（如果node_modules不存在）
-  if [ ! -d "node_modules" ]; then
-    log_info "安装前端依赖…"
-    npm ci
-  fi
-
-  # 构建前端到 dist 目录
-  npm run build
-  cd "$ROOT_DIR"
-}
-
-build_and_start_single_container() {
-  log_info "构建单镜像boss应用（包含最新前端）…"
-
-  # 确保前端已构建
-  build_frontend
-
-  # 构建Docker镜像
-  docker build -t get_jobs-boss .
-
-  log_info "启动boss应用…"
-  CONTAINER_ID=$(docker run -d \
-    --name boss-runner \
-    --restart unless-stopped \
-    -p 38888:38888 \
-    -v "$ROOT_DIR/config.yaml:/app/config.yaml" \
-    -v "$ROOT_DIR/.env:/app/.env" \
-    -v "$ROOT_DIR/data:/app/data" \
-    get_jobs-boss)
-}
-
-monitor_job_success() {
-  log_info "开始监控投递日志，等待投递成功…"
-  log_info "投递成功日志模式: '投递完成 | 岗位：'"
-
-  while true; do
-    if docker logs boss-runner 2>&1 | grep -q "投递完成 | 岗位："; then
-      log_info "🎉 检测到投递成功！"
-      docker logs boss-runner | grep "投递完成 | 岗位："
-      break
-    fi
-
-    # 检查容器是否还在运行
-    if ! docker ps --filter "name=boss-runner" --format "{{.Names}}" | grep -q "boss-runner"; then
-      log_info "容器已停止，检查日志…"
-      docker logs boss-runner
-      exit 1
-    fi
-
-    sleep 5
-  done
-}
-
-main() {
-  cleanup_stack
-  ensure_config
-
-  build_and_start_single_container
-  printf '%s\n' "$CONTAINER_ID"
-}
-
-main "$@"
