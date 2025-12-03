@@ -1,23 +1,62 @@
+@import "material-symbols/outlined.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply font-display antialiased bg-background-light dark:bg-background-dark text-[#111418] dark:text-white;
+  /* 自托管 Inter Variable */
+  @font-face {
+    font-family: 'Inter';
+    src: url('/fonts/inter/InterVariable.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'Inter';
+    src: url('/fonts/inter/InterVariable-Italic.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: italic;
+    font-display: swap;
+  }
+
+  body { @apply font-display antialiased; background: var(--bg); color: var(--text); }
+  /* 主题变量：更偏中性灰，少量绿色做强调 */
+  :root {
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --surface-2: #f8fafc;
+    --line: rgba(15, 23, 42, 0.08); /* slate-900 8% */
+    --text: #111418;
+    --muted: #7a8a9a;
+    --primary: #10a37f; /* ChatGPT 绿 */
+  }
+  .dark {
+    --bg: #0b141c;
+    --surface: rgba(2, 6, 12, 0.6);
+    --surface-2: #0b141c;
+    --line: rgba(255, 255, 255, 0.12);
+    --text: #ffffff;
+    --muted: #93a4b3;
+    --primary: #10a37f;
   }
 }
 
 @layer components {
   /* 现代卡片：圆角更大、轻微描边与柔和阴影、悬停强化 */
-  .card {
-    @apply bg-white dark:bg-slate-900/70 rounded-2xl ring-1 ring-slate-200/70 dark:ring-white/10 shadow-sm hover:shadow-md transition-shadow;
-  }
+  .card { @apply rounded-2xl; }
+  .card { background: var(--surface); box-shadow: none; }
+  .card { --tw-ring-color: var(--line); }
+  .card { @apply ring-1; }
 
-  /* Material Symbols 图标参数 */
+  /* Material Symbols 图标参数（自托管字体） */
   .material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     font-size: 20px;
+    font-weight: normal; font-style: normal; line-height: 1; letter-spacing: normal;
+    text-transform: none; display: inline-block; white-space: nowrap; word-wrap: normal;
+    direction: ltr; -webkit-font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased;
   }
 
   /* Tooltip 提示框 */
@@ -48,19 +87,18 @@
 
   /* 按钮样式 */
   .btn-primary {
-    @apply flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-xl h-11 px-6 bg-primary text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-primary/90 transition-colors shadow-sm hover:shadow-md;
+    background: var(--primary);
+    @apply flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-xl h-10 px-4 text-white text-sm font-medium leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity;
   }
 
   .btn-secondary {
-    @apply flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-xl h-11 px-6 bg-transparent text-[#617589] dark:text-slate-400 text-sm font-bold leading-normal tracking-[0.015em] hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors;
+    @apply flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-xl h-10 px-4 bg-transparent text-[#617589] dark:text-slate-400 text-sm font-medium leading-normal tracking-[0.015em] hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors;
   }
 
   /* 输入框焦点样式 */
   input:focus,
   textarea:focus,
-  select:focus {
-    @apply outline-none ring-2 ring-primary/40;
-  }
+  select:focus { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 40%, transparent); }
 
   /* 滚动条样式 */
   ::-webkit-scrollbar {

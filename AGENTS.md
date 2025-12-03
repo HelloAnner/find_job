@@ -140,7 +140,7 @@
     - 删除顶部 Header（包含品牌标题与“保存配置”按钮）。
     - 删除底部“保存配置”按钮。
   - 文件：`front/src/pages/BasicSettings.tsx`
-    - 删除底部“保存设置”按钮，仅保留“重置”。
+    - 删除底部“保存设置”按钮，仅保留一个恢复默认按钮（已在 2025-12-03 完全移除）。
 - 备注：HTML `<title>` 已改为“find_jobs”，页面内顶部品牌字样已删除。
 
 ### 后端
@@ -226,9 +226,7 @@
   - 开发模式：后端 `go run .`（38888）+ 前端 `(cd front && npm run dev)`（3000，已代理 `/api`）。
   - 生产模式：`go build -o boss ./` 后直接运行 `./boss`。
   - Docker（可选）：`./scripts/start.sh` 一键构建运行，或 `docker build` + `docker run`。
-  - 首次登录两种路径：
-    1) `boss.openWindows: true` 可视化扫码，生成 `data/boss/cookie.json`；
-    2) 直接提供 `data/boss/browser_cookie.txt` 或 `data/boss/cookie.json`。
+  - 首次登录：请在本地浏览器完成扫码并将 Cookie 保存到 `data/boss/browser_cookie.txt`（或 `data/boss/cookie.json`）后再启动服务；服务器侧默认后台静默，不再支持弹窗切换。
   - 端口说明：默认硬编码 38888，如冲突需改 `main.go` 并重新编译（或仅在 Docker 中更改宿主映射端口）。
 
 ### 坑点
@@ -304,3 +302,149 @@
   - `scripts/start-server.sh` = 纯 Docker + Hub 的服务器启动（无源码；从私有仓库拉取并运行）。
 - 文档：在 `deploy.md` 顶部新增“脚本角色对比”，在第 1 节与第 6 节分别标注对应脚本，避免混淆。
 
+
+## 2025-12-03 前端 UI 全量重写（不改功能/接口）
+
+- 目标：在保证接口与配置流不变的前提下，重做交互与视觉。所有选择/交互类组件（Select/CheckboxGroup/Switch/Input/Textarea/ChipInput）从头实现，更现代且可达性更好。
+
+### 关键改动
+1) 布局/导航
+   - `front/src/components/Layout/Layout.tsx`：容器改为 `xl:w-2/3`，边距 `px-4…xl:px-40`；整体更轻。
+   - `front/src/components/Layout/Sidebar.tsx`：窄栏+图标为主；激活态高亮；底部状态提示“自动保存开启”。
+2) 基础组件（完全重写）
+   - `front/src/components/shared/Select.tsx`：自绘 Listbox（ARIA/键盘导航/外点关闭/滚动捕获），替换原生 `<select>`；视觉与交互全面升级。
+   - `front/src/components/shared/Input.tsx`：浮动标签样式、可选图标、改进焦点与禁用态。
+   - `front/src/components/shared/Textarea.tsx`：舒适行高与焦点态，保留可选图标。
+   - `front/src/components/shared/Switch.tsx`：支持 Space/Enter 键；ARIA 可达性完善。
+   - `front/src/components/shared/CheckboxGroup.tsx`：卡片化选项、动效、全选/反选。
+   - `front/src/components/shared/ChipInput.tsx`：动画/编辑/粘贴分割优化。
+3) 保持业务不变
+   - 页面文件 `BasicSettings/AdvancedSettings/AISettings` 的数据流与 `useConfig.updateConfig()` 调用未变；接口仍是 `GET/POST /api/config`。
+
+### 验证
+- 构建：`(cd front && npm ci && npm run build)` 通过；产物在 `front/dist`。
+- 交互：
+  - Select：方向键↑↓导航、Enter 选择、Esc 关闭；点击外部关闭。
+  - Switch：Space/Enter 切换；aria-checked 正确更新。
+  - ChipInput：Enter/逗号添加，Backspace 删除最后一项，双击编辑，粘贴自动拆分。
+  - 自动保存：任何变更 ~0.8s 内写回，首屏仅展示不落盘（由 `ConfigProvider` 保持）。
+
+### 影响范围
+- 仅 `front/` 展示层；后端与接口不变。
+
+### 坑点
+- 自绘 Select 改为受控组件，若传入值不在 `options` 内将回退到首项；页面保证传值正确即可。
+
+
+## 2025-12-03 UI 再打磨（OpenAI 风格极简设置）
+
+- 目标：整体观感向 openai.com 设置页靠拢：极简、留白、细描边；左侧标签、右侧控件的“设置行”布局；交互轻量但精致。
+
+### 新增组件
+- Section：设置分组容器（标题/描述 + 极简卡片），路径 `front/src/components/shared/Section.tsx`。
+- Field：设置行（左标签右控件），路径 `front/src/components/shared/Field.tsx`。
+- MultiSelect：极简多选下拉（搜索、全选/清空、键盘导航），路径 `front/src/components/shared/MultiSelect.tsx`。
+
+### 页面改造
+- BasicSettings：采用 Section/Field 重排；规模/融资改为 MultiSelect；其余保持数据流不变。
+- AdvancedSettings：采用 Section/Field 重排，文案与提示精简。
+- AISettings：采用 Section/Field 重排，textarea 行高与占位优化。
+
+### 视觉细节
+- .card 去除阴影，仅保留轻描边与大圆角；按钮尺寸统一为 h-10；字体权重适度下降，观感更“冷静”。
+
+### 验证
+- 构建已通过：`(cd front && npm ci && npm run build)`。
+- 可达性：Select/MultiSelect/Switch 均支持键盘操作与 ARIA 语义。
+
+
+## 2025-12-03 主题与交互第二轮精修（中性灰 + ChatGPT 绿；RangeSlider 等）
+
+- 主题（tokens）
+  - tailwind.config.js：primary 由 `#3994ef` 调整为 `#10a37f`；背景为 `#f8fafc` / `#0b141c`。
+  - index.css：新增 CSS 变量 `--bg/--surface/--surface-2/--line/--text/--muted/--primary`，组件改用 `var(--*)`；卡片仅细描边（无阴影）。
+- 组件增强
+  - MultiSelect：继续极简风，首屏在按钮内展示至多 3 个选中标签，支持搜索/全选/清空。
+  - RangeSlider（新增）：双滑块范围选择，文件 `front/src/components/shared/RangeSlider.tsx`；用于薪资；保留输入框双轨校正。
+  - Select/Input/Textarea/Switch：统一焦点态；可达性键盘支持保持完好。
+- 页面
+  - BasicSettings：薪资行加入 RangeSlider；规模/阶段改用 MultiSelect；描述文案更克制。
+  - AdvancedSettings/AISettings：采用 Section/Field 布局，提示语更简洁。
+- 验证
+  - `cd front && npm ci && npm run build` 通过；产物已更新。
+
+
+## 2025-12-03 垂直表单与默认暗色（OpenAI 风格对齐）
+
+- 方向：所有设置项改为“上下结构”（标题/描述在上、控件在下），去除左右并列；默认使用暗色主题，背景/描边/文本采用中性灰 + ChatGPT 绿点缀。
+
+### 改动
+- Field 组件：重写为垂直布局（`front/src/components/shared/Field.tsx`），标题与描述置顶，控件置底；统一内边距与分隔线。
+- AISettings：自我介绍/Prompt/模板 textarea 高度提升到 `min-h-56/48`，更适合长文输入；暗色下表面色改为更纯净的深色（`#0f1922`）。
+- 默认暗色：`front/index.html` 的 `<html>` 加 `class="dark"`；`index.css` 用主题变量控制 `body` 的背景与文本色。
+
+### 说明
+- 主题变量：`--bg/--surface/--surface-2/--line/--text/--muted/--primary`，组件普遍取变量而非硬编码色。
+- 兼容性：保留原 2/3 主内容宽布局；接口与自动保存逻辑不变。
+
+### 验证
+- `(cd front && npm ci && npm run build)` 通过；默认进入暗色风格，设置项为上下结构，文本域高度明显增大。
+
+
+## 2025-12-03 侧边栏：默认展开，文字水平展示
+- 需求：左侧边栏默认展开，菜单文字水平展示，不再仅显示图标。
+- 改动：`front/src/components/Layout/Sidebar.tsx`
+  - 宽度由 `w-18 sm:w-20` 调整为 `w-64`；
+  - 顶部品牌区改为图标 + 文本（find_jobs / 配置面板）；
+  - 导航项的文字从 `hidden xl:inline` 改为常显 `text-sm font-medium truncate`。
+- 验证：`(cd front && npm run build)` 通过；菜单项文字默认可见。
+
+
+## 2025-12-03 浏览器 Tab 图标（favicon）更换
+- 新增：`front/public/favicon.svg`（绿底简约公文包图标，#10a37f），与主题一致。
+- 修改：`front/index.html` 的 `<link rel="icon" …>` 指向 `/favicon.svg`。
+- 验证：`(cd front && npm run build)` 通过；刷新浏览器即可看到新图标。
+
+
+## 2025-12-03 前端资源本地化打包（无外网依赖）
+
+- 自托管字体
+  - Inter Variable：下载至 `front/public/fonts/inter/InterVariable(.woff2/.Italic.woff2)`；`index.css` 内以 `@font-face` 引入，`font-display: swap`。
+  - Material Symbols Outlined：通过 npm 包 `material-symbols` 引入，Vite 构建时将 `material-symbols-outlined.woff2` 打包到 dist（避免 Google Fonts 远程加载）。
+- 移除远程链接
+  - 删除 `front/index.html` 中 Google Fonts 的 `<link>`；加入本地字体的 `<link rel="preload">`；favicon 已使用本地 `/favicon.svg`。
+- 构建结果
+  - `dist/assets/material-symbols-outlined-*.woff2` 已随产物打包，部署后无需外网；整体首屏加载不再请求 googleapis/gstatic。
+
+
+## 2025-12-03 侧边栏固定与独立滚动
+- 需求：左侧边栏与右侧内容分离，左侧在任何情况下不滚动。
+- 改动：
+  - `front/src/components/Layout/Sidebar.tsx`：`aside` 改为 `fixed inset-y-0 left-0 w-64 overflow-hidden`，确保完全固定。
+  - `front/src/components/Layout/Layout.tsx`：右侧 `main` 使用 `ml-64 h-screen overflow-y-auto`，仅右侧区域滚动。
+- 验证：`(cd front && npm run build)` 通过；滚动页面时左侧完全不动，右侧独立滚动。
+
+
+## 2025-12-03 间隔/薪资输入与背景一致性
+
+- 投递间隔：`front/src/pages/AdvancedSettings.tsx` 将原“投递间隔时间 (秒)”改为按小时的 `interval` 选择器（1/2/3/4/6/8/12/24h），与后端 `config.boss.interval` 保持一致；同时将操作等待字段收敛为单个输入（秒），避免浮动标签与值重叠。
+- 薪资输入：删除 RangeSlider 组件（`front/src/components/shared/RangeSlider.tsx`），`BasicSettings` 仅保留上下限数字输入，直接映射 YAML 的 `[min, max]`；hint 文案同步为“单位千/月”。
+- UI 调整：`front/src/components/Layout/Sidebar.tsx` 去掉底部“自动保存开启”提示；`front/src/components/Layout/Layout.tsx` 的右侧主区域强制使用 `bg-background-light`/`bg-background-dark`，与整体背景一致。
+- 验证：`(cd front && npm run build)` 通过，自动保存逻辑不受影响；页面刷新后配置保留。
+
+
+## 2025-12-03 移除恢复按钮
+
+- 说明：后端不再支持手动恢复默认配置，前端相应按钮与确认弹窗全部移除，避免用户误以为存在该能力。
+- 具体改动：
+  - `front/src/pages/BasicSettings.tsx`、`AdvancedSettings.tsx`、`AISettings.tsx` 删除 reset 按钮与相关逻辑。
+  - `front/src/contexts/ConfigContext.tsx` 去掉 `resetConfig` 导出，防止其他组件继续调用。
+- 验证：`(cd front && npm run build)` 通过；页面不再渲染任何恢复按钮入口。
+
+
+## 2025-12-03 窗口开启选项下线（默认后台静默）
+
+- 前端：`front/src/pages/AdvancedSettings.tsx` 去掉“窗口开启方式”字段，配置类型与上下文（`front/src/types/config.ts`、`front/src/contexts/ConfigContext.tsx`）不再包含 `openWindows/showWindows`。
+- 后端：`internal/config/config.go` 移除对应字段；`internal/boss/app.go` 始终以 Headless 模式启动浏览器，并在缺少/失效 Cookie 时直接报错提示本地导出 Cookie 文件；`loginWithVisibleWindow`/`scanLogin` 等可视化逻辑全部删除。
+- 配置/文档：`config.yaml`、`README.md`、`deploy.md`、本文件相关段落统一说明“仅支持后台静默 + Cookie 文件”，不再提及 `boss.openWindows`。
+- 验证：`(cd front && npm run build)` 与 `go test` 非必须；已执行 `cd front && npm run build`，并运行 `gofmt` 格式化 Go 代码。

@@ -10,9 +10,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        "primary": "#3994ef",
-        "background-light": "#f6f7f8",
-        "background-dark": "#101922",
+        // 更贴近 OpenAI 的低饱和中性色系：以中性灰为基，少量绿色强调
+        "primary": "#10a37f", // ChatGPT 绿，适量使用
+        "background-light": "#f8fafc",
+        "background-dark": "#0b141c",
       },
       fontFamily: {
         "display": ["Inter", "Noto Sans", "sans-serif"]

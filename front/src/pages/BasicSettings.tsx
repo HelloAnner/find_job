@@ -1,10 +1,12 @@
 import React from 'react';
 import { useConfig } from '@/contexts/ConfigContext';
-import { CheckboxGroup } from '@/components/shared/CheckboxGroup';
 import { ChipInput } from '@/components/shared/ChipInput';
 import { Input } from '@/components/shared/Input';
 import { Select as NiceSelect } from '@/components/shared/Select';
 import { Switch } from '@/components/shared/Switch';
+import { Section } from '@/components/shared/Section';
+import { Field } from '@/components/shared/Field';
+import { MultiSelect } from '@/components/shared/MultiSelect';
 
 const experienceOptions = [
   { value: '不限', label: '不限' },
@@ -45,7 +47,7 @@ const stageOptions = [
 ];
 
 export const BasicSettings: React.FC = () => {
-  const { config, updateConfig, resetConfig } = useConfig();
+  const { config, updateConfig } = useConfig();
 
   // 关键词与地域已改为 ChipInput，直接在 onChange 中更新数组，无需本地 split 逻辑
 
@@ -76,12 +78,6 @@ export const BasicSettings: React.FC = () => {
 
   // 自动保存：已在 ConfigProvider 中实现，这里不再提供手动保存
 
-  const handleReset = () => {
-    if (window.confirm('确定要重置所有设置吗？重置后需要重新保存才会生效。')) {
-      resetConfig();
-    }
-  };
-
   // 城市 Chip 专用：支持 "全国/不限" 逻辑，与其他城市互斥
   const handleCityChipsChange = (vals: string[]) => {
     const cleaned = Array.from(new Set(vals.map(v => v.trim()).filter(Boolean)));
@@ -91,138 +87,74 @@ export const BasicSettings: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-[#111418] dark:text-white text-3xl font-bold leading-tight tracking-[-0.02em]">
-          基本投递设置
-        </h1>
-        <p className="text-[#617589] dark:text-slate-400 text-base font-normal leading-normal">
-          在这里自定义您的自动化机器人行为和参数，精准匹配职位。
-        </p>
+    <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight">基本投递设置</h1>
+        <p className="text-sm text-[#7a8a9a]">保持简约但参数齐全，保障机器人稳定高效投递。</p>
       </div>
 
       {/* 职位偏好 */}
-      <div className="card p-6 flex flex-col gap-4">
-        <h2 className="text-[#111418] dark:text-white text-xl font-semibold leading-tight tracking-tight px-4 pb-3 pt-2 border-b border-slate-200 dark:border-white/10">
-          职位偏好
-        </h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6 px-4 py-3">
+      <Section title="职位偏好" description="关键词影响搜索结果；可选启用智能扩展以覆盖更多相关岗位。">
+        <Field label="职位名称/关键词" hint="输入后按 Enter 或用逗号分隔添加；支持批量粘贴">
           <ChipInput
-            label="职位名称/关键词"
-            tooltip="输入后按 Enter 添加，或用逗号分隔，例如 '前端开发, React'"
+            label=""
             values={config.boss.keywords}
             onChange={(vals) => updateConfig({ boss: { ...config.boss, keywords: vals } })}
             placeholder="例如：前端开发、React、Vue"
           />
+        </Field>
 
-          <div className="flex flex-col min-w-40 flex-1 justify-end">
-            <Switch
-              label="关键词扩展"
-              tooltip="启用后，机器人将自动扩展您的关键词，寻找更多相关职位。"
-              checked={config.boss.enableAI}
-              onChange={(v) => updateConfig({ boss: { ...config.boss, enableAI: v } })}
-            />
-          </div>
-        </div>
-      </div>
+        <Field label="关键词扩展" hint="启用后自动扩展近义词与相关词">
+          <Switch label="启用" checked={config.boss.enableAI} onChange={(v) => updateConfig({ boss: { ...config.boss, enableAI: v } })} />
+        </Field>
+      </Section>
 
       {/* 求职要求 */}
-      <div className="card p-6 flex flex-col gap-4">
-        <h2 className="text-[#111418] dark:text-white text-xl font-semibold leading-tight tracking-tight px-4 pb-3 pt-2 border-b border-slate-200 dark:border-white/10">
-          求职要求
-        </h2>
+      <Section title="求职要求" description="按地域、经验、学历与薪资筛选目标职位。">
+        <Field label="地域" hint="支持输入多个城市；输入“全国”与其它城市互斥">
+          <ChipInput label="" values={config.boss.cityCode} onChange={handleCityChipsChange} placeholder="例如：北京、上海、深圳" />
+        </Field>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6 px-4 py-3">
-          <ChipInput
-            label="地域"
-            tooltip="可输入多个城市，按 Enter 或用逗号分隔新增；支持输入“全国”（与其他城市互斥）。"
-            values={config.boss.cityCode}
-            onChange={handleCityChipsChange}
-            placeholder="例如：北京、上海、深圳"
-          />
+        <Field label="经验" hint="期望职位的经验要求">
+          <NiceSelect label="" value={config.boss.experience[0] || '不限'} onChange={handleExperienceChange} options={experienceOptions} />
+        </Field>
 
-          <NiceSelect
-            label="经验"
-            tooltip="选择您期望的职位工作经验要求。"
-            value={config.boss.experience[0] || '不限'}
-            onChange={handleExperienceChange}
-            options={experienceOptions}
-          />
-
-          <div className="flex flex-col min-w-40 flex-1">
-            <div className="flex items-center gap-2 pb-2">
-              <p className="text-[#111418] dark:text-white text-base font-medium leading-normal">薪资 (千/月)</p>
-              <div className="tooltip">
-                <span className="material-symbols-outlined text-[#617589] dark:text-slate-400 cursor-help" style={{ fontSize: '18px' }}>
-                  help_outline
-                </span>
-                <span className="tooltiptext">设置您期望的月薪范围，单位为千元（k）。留空表示不限。</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="最低"
-                type="number"
-                value={(config.boss.expectedSalary[0] || '').toString()}
-                onChange={(e) => handleSalaryChange(e.currentTarget.value, config.boss.expectedSalary[1]?.toString() || '')}
-                placeholder="最低"
-              />
-              <Input
-                label="最高"
-                type="number"
-                value={(config.boss.expectedSalary[1] || '').toString()}
-                onChange={(e) => handleSalaryChange(config.boss.expectedSalary[0]?.toString() || '', e.currentTarget.value)}
-                placeholder="最高"
-              />
-            </div>
+        <Field label="薪资 (千/月)" hint="直接填写最低与最高预期薪资，单位为千元/月">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="最低"
+              type="number"
+              value={(config.boss.expectedSalary[0] || '').toString()}
+              onChange={(e) => handleSalaryChange(e.currentTarget.value, config.boss.expectedSalary[1]?.toString() || '')}
+              placeholder="最低"
+              min={0}
+            />
+            <Input
+              label="最高"
+              type="number"
+              value={(config.boss.expectedSalary[1] || '').toString()}
+              onChange={(e) => handleSalaryChange(config.boss.expectedSalary[0]?.toString() || '', e.currentTarget.value)}
+              placeholder="最高"
+              min={0}
+            />
           </div>
+        </Field>
 
-          <NiceSelect
-            label="学历"
-            tooltip="选择职位要求的最低学历。"
-            value={config.boss.degree[0] || '不限'}
-            onChange={handleDegreeChange}
-            options={degreeOptions}
-          />
-        </div>
-      </div>
+        <Field label="学历" hint="职位要求的最低学历">
+          <NiceSelect label="" value={config.boss.degree[0] || '不限'} onChange={handleDegreeChange} options={degreeOptions} />
+        </Field>
+      </Section>
 
       {/* 公司偏好 */}
-      <div className="card p-6 flex flex-col gap-4">
-        <h2 className="text-[#111418] dark:text-white text-xl font-semibold leading-tight tracking-tight px-4 pb-3 pt-2 border-b border-slate-200 dark:border-white/10">
-          公司偏好
-        </h2>
+      <Section title="公司偏好" description="对公司规模与融资阶段的偏好设置（多选）">
+        <Field label="公司规模">
+          <MultiSelect label="" values={config.boss.scale} onChange={handleScaleChange} options={scaleOptions} placeholder="选择规模…" />
+        </Field>
+        <Field label="融资阶段">
+          <MultiSelect label="" values={config.boss.stage} onChange={handleStageChange} options={stageOptions} placeholder="选择阶段…" />
+        </Field>
+      </Section>
 
-        <div className="px-4 py-3">
-          <div className="flex flex-col gap-6">
-            <CheckboxGroup
-              label="公司规模"
-              tooltip="选择您偏好的公司员工数量规模，可多选。"
-              options={scaleOptions}
-              values={config.boss.scale}
-              onChange={handleScaleChange}
-            />
-
-            <CheckboxGroup
-              label="融资阶段"
-              tooltip="选择您偏好的公司融资阶段，可多选。"
-              options={stageOptions}
-              values={config.boss.stage}
-              onChange={handleStageChange}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col sm:flex-row items-center justify-end gap-4 p-4 mt-4">
-        <button
-          onClick={handleReset}
-          className="flex w-full sm:w-auto min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-11 px-6 bg-transparent text-[#617589] dark:text-slate-400 text-sm font-bold leading-normal tracking-[0.015em] hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-        >
-          <span className="truncate">重置</span>
-        </button>
-      </div>
     </div>
   );
 };

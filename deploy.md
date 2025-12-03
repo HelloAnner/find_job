@@ -90,7 +90,7 @@ go run .
 (cd front && npm ci && npm run dev)
 ```
 
-首次可将 `config.yaml` 的 `boss.openWindows: true`，弹窗扫码登录并生成 `data/boss/cookie.json`；随后可切回无头模式。
+首次需在本地浏览器登录 Boss，并将 Cookie 写入 `data/boss/browser_cookie.txt`（推荐）或 `data/boss/cookie.json`；服务器端默认后台静默运行，不会弹出扫码窗口。
 
 ---
 

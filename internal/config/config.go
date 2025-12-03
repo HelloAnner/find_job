@@ -29,9 +29,6 @@ type Root struct {
 // BossConfig mirrors the original Java BossConfig fields after normalization.
 type BossConfig struct {
 	SayHi          string            `yaml:"sayHi"`
-	Debugger       bool              `yaml:"debugger"`
-	OpenWindows    *bool             `yaml:"openWindows"`
-	ShowWindows    *bool             `yaml:"showWindows"`
 	Keywords       []string          `yaml:"keywords"`
 	CityCode       []string          `yaml:"cityCode"`
 	CustomCityCode map[string]string `yaml:"customCityCode"`
@@ -86,14 +83,6 @@ func (b *BossConfig) normalize() error {
 	if b.CustomCityCode == nil {
 		b.CustomCityCode = map[string]string{}
 	}
-	if b.OpenWindows == nil && b.ShowWindows != nil {
-		b.OpenWindows = b.ShowWindows
-	}
-	if b.OpenWindows == nil {
-		defaultOpen := false
-		b.OpenWindows = &defaultOpen
-	}
-
 	// Convert scalar selectors to API codes.
 	b.JobType = mapWithDefault(b.JobType, jobTypeMap)
 	b.Salary = mapWithDefault(b.Salary, salaryMap)
@@ -123,14 +112,6 @@ func (b *BossConfig) normalize() error {
 	}
 
 	return nil
-}
-
-// OpenWindowsEnabled reports whether Playwright should launch with a visible window.
-func (b *BossConfig) OpenWindowsEnabled() bool {
-	if b == nil || b.OpenWindows == nil {
-		return true
-	}
-	return *b.OpenWindows
 }
 
 func mapWithDefault(value string, lookup map[string]string) string {

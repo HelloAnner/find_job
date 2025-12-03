@@ -1,4 +1,4 @@
-/* 重置 Vite 模板默认样式，避免限制整体布局宽度 */
+/* 清理 Vite 模板默认样式，避免限制整体布局宽度 */
 #root {
   max-width: none;
   margin: 0;

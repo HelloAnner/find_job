@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/yaml.v3"
 	"get_jobs/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 type ConfigUpdater interface {
@@ -21,15 +21,17 @@ type ConfigUpdater interface {
 
 type Server struct {
 	configPath   string
+	cookiePath   string
 	configUpdater ConfigUpdater
 	mu           sync.RWMutex
 	server       *http.Server
 	staticDir    string
 }
 
-func NewServer(configPath string, updater ConfigUpdater, port int) *Server {
+func NewServer(configPath string, cookiePath string, updater ConfigUpdater, port int) *Server {
 	s := &Server{
 		configPath:   configPath,
+		cookiePath:   cookiePath,
 		configUpdater: updater,
 		staticDir:    "./front/dist",
 	}
@@ -40,6 +42,8 @@ func NewServer(configPath string, updater ConfigUpdater, port int) *Server {
 	mux.HandleFunc("GET /api/config", s.handleGetConfig)
 	mux.HandleFunc("POST /api/config", s.handleUpdateConfig)
 	mux.HandleFunc("GET /api/config/reload", s.handleReloadConfig)
+	mux.HandleFunc("POST /api/credentials/check", s.handleCredentialCheck)
+	mux.HandleFunc("POST /api/credentials/apply", s.handleCredentialApply)
 
 	// Static file serving - single page application support
 	mux.HandleFunc("GET /", s.handleStatic)

@@ -7,8 +7,15 @@ interface SwitchProps {
   tooltip?: string;
 }
 
-// 现代化开关组件：无外部依赖，纯 Tailwind
+// 全新开关：可键盘操作（Space/Enter），更强的可达性
 export const Switch: React.FC<SwitchProps> = ({ label, checked, onChange, tooltip }) => {
+  const onKeyDown: React.KeyboardEventHandler<HTMLButtonElement> = (e) => {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      onChange(!checked);
+    }
+  };
+
   return (
     <div className="flex items-center justify-between gap-4">
       <div className="flex items-center gap-2">
@@ -26,9 +33,11 @@ export const Switch: React.FC<SwitchProps> = ({ label, checked, onChange, toolti
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
+        onKeyDown={onKeyDown}
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-          checked ? 'bg-primary' : 'bg-[#f0f2f4] dark:bg-slate-800'
+          checked ? 'bg-primary' : 'bg-[#e9edf0] dark:bg-slate-800'
         }`}
       >
         <span
@@ -40,4 +49,3 @@ export const Switch: React.FC<SwitchProps> = ({ label, checked, onChange, toolti
     </div>
   );
 };
-

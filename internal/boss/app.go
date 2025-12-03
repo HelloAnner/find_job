@@ -87,7 +87,7 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 		return nil, errors.New("启用了AI能力但未配置AI环境变量")
 	}
 
-	runner, err := play.NewRunner(!cfg.Boss.OpenWindowsEnabled())
+	runner, err := play.NewRunner(true)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func (a *App) Close() {
 	if a == nil {
 		return
 	}
-	if a.runner != nil && !a.cfg.Debugger {
+	if a.runner != nil {
 		a.runner.Close()
 	}
 }
@@ -195,9 +195,7 @@ func (a *App) Run() error {
 		}
 	}
 
-	if !a.cfg.Debugger {
-		a.printResult()
-	}
+	a.printResult()
 	return nil
 }
 
@@ -210,9 +208,7 @@ func (a *App) printResult() {
 		log.Printf("[boss] 保存黑名单失败: %v", err)
 	}
 	a.results = nil
-	if !a.cfg.Debugger {
-		a.runner.Close()
-	}
+	a.runner.Close()
 	time.Sleep(1 * time.Second)
 }
 
@@ -319,15 +315,8 @@ func (a *App) login(page playwright.Page) error {
 		}
 	}
 
-	if !a.cfg.OpenWindowsEnabled() {
-		if !a.hasCookieData() && !a.hasBrowserCookieData() {
-			return errors.New("检测不到历史Cookie，在服务器无头模式下无法发起登录，请先在本地写入 data/boss/cookie.json 或 data/boss/browser_cookie.json")
-		}
-	} else if !a.hasCookieData() && !a.hasBrowserCookieData() {
-		log.Println("[boss] 未检测到Cookie，准备弹出浏览器完成首次登录…")
-		if err := a.loginWithVisibleWindow(); err != nil {
-			return err
-		}
+	if !a.hasCookieData() && !a.hasBrowserCookieData() {
+		return errors.New("检测不到历史Cookie，当前仅支持后台静默模式，请先写入 data/boss/cookie.json 或 data/boss/browser_cookie.txt")
 	}
 
 	if play.CookieFileExists(a.cookieFile) {
@@ -357,71 +346,11 @@ func (a *App) login(page playwright.Page) error {
 		return err
 	}
 	if required {
-		if !a.cfg.OpenWindowsEnabled() {
-			return errors.New("检测到登录状态失效，在无头模式下不会自动弹窗，请重新生成 cookies")
-		}
-		log.Println("[boss] cookie失效，尝试扫码登录…")
-		if err := a.scanLogin(page); err != nil {
-			return err
-		}
-		if err := a.runner.SaveCookies(a.cookieFile); err != nil {
-			log.Printf("[boss] 保存cookie失败: %v", err)
-		}
+		return errors.New("检测到登录状态失效，请在本地更新 data/boss/cookie.json 或 data/boss/browser_cookie.txt 后重试")
 	}
 
 	// 登录成功后输出用户名称
 	a.logCurrentUserName(page)
-	return nil
-}
-
-func (a *App) loginWithVisibleWindow() error {
-	runner, err := play.NewRunner(false)
-	if err != nil {
-		return fmt.Errorf("创建临时浏览器失败: %w", err)
-	}
-	defer runner.Close()
-
-	page := runner.Page()
-	runner.InitStealth()
-	log.Println("[boss] 已弹出浏览器，请扫码登录…")
-	log.Println("[boss] (临时窗口) 正在打开 Boss 主页…")
-	if err := gotoWithHumanPause(page, homeURL); err != nil {
-		return fmt.Errorf("可视化登录访问主页失败: %w", err)
-	}
-	log.Println("[boss] (临时窗口) 主页加载完成，等待滑块验证…")
-	sleepRandom(800, 1500)
-	if err := a.waitForSlider(page); err != nil {
-		return err
-	}
-	log.Println("[boss] (临时窗口) 滑块验证通过，进入扫码流程…")
-	if err := a.scanLogin(page); err != nil {
-		return err
-	}
-	if err := runner.SaveCookies(a.cookieFile); err != nil {
-		return fmt.Errorf("保存登录后的cookie失败: %w", err)
-	}
-	log.Println("[boss] (临时窗口) 登录完成，Cookie 已写入本地")
-	return nil
-}
-
-func (a *App) reloadHeadlessSession(page playwright.Page) error {
-	if err := a.runner.LoadCookies(a.cookieFile); err != nil {
-		return fmt.Errorf("加载最新cookie失败: %w", err)
-	}
-	if err := gotoWithHumanPause(page, homeURL); err != nil {
-		return fmt.Errorf("刷新无头浏览器状态失败: %w", err)
-	}
-	sleepRandom(600, 1200)
-	if err := a.waitForSlider(page); err != nil {
-		return err
-	}
-	required, err := a.isLoginRequired(page)
-	if err != nil {
-		return err
-	}
-	if required {
-		return errors.New("登录后仍检测到未登录状态，请重试")
-	}
 	return nil
 }
 
@@ -1489,44 +1418,6 @@ func (a *App) isLoginRequired(page playwright.Page) (bool, error) {
 	}
 	log.Println("[boss] cookie有效，已登录…")
 	return false, nil
-}
-
-func (a *App) scanLogin(page playwright.Page) error {
-	if err := gotoWithHumanPause(page, homeURL+"/web/user/?ka=header-login"); err != nil {
-		return fmt.Errorf("进入登录页失败: %w", err)
-	}
-	sleepRandom(600, 1200)
-
-	loginBtn := page.Locator(loginBtn)
-	if count, err := loginBtn.Count(); err == nil && count > 0 {
-		if text, err := loginBtn.TextContent(); err == nil && text != "登录" {
-			log.Println("[boss] 已经登录，直接开始投递…")
-			return nil
-		}
-	}
-
-	log.Println("[boss] 等待登录…")
-	bannerSwitch := page.Locator(loginScanSwitch)
-	if err := clickWithHumanPause(page, bannerSwitch); err != nil {
-		return fmt.Errorf("点击二维码登录按钮失败: %w", err)
-	}
-
-	start := time.Now()
-	timeout := 10 * time.Minute
-	for {
-		if time.Since(start) >= timeout {
-			return errors.New("超过10分钟未完成登录，程序退出")
-		}
-		locator := page.Locator(jobListContainer)
-		if count, err := locator.Count(); err == nil && count > 0 {
-			visible, _ := locator.First().IsVisible()
-			if visible {
-				log.Println("[boss] 用户已登录！")
-				return nil
-			}
-		}
-		time.Sleep(2 * time.Second)
-	}
 }
 
 func (a *App) logCurrentUserName(page playwright.Page) {

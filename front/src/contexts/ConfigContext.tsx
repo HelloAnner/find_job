@@ -13,9 +13,6 @@ function transformApiToFrontend(apiData: any): RootConfig {
   return {
     boss: {
       sayHi: boss?.sayHi ?? boss?.SayHi ?? '',
-      debugger: boss?.debugger ?? boss?.Debugger ?? false,
-      openWindows: boss?.openWindows ?? boss?.OpenWindows ?? false,
-      showWindows: boss?.showWindows ?? boss?.ShowWindows ?? false,
       keywords: boss?.keywords ?? boss?.Keywords ?? [],
       // CityCode：后端为编码；前端展示友好文案。仅对常见编码做最小可用解码，未知编码原样显示。
       cityCode: decodeCities(boss?.cityCode ?? boss?.CityCode ?? []),
@@ -132,9 +129,6 @@ function transformFrontendToApi(frontendData: RootConfig): any {
   return {
     Boss: {
       SayHi: frontendData.boss.sayHi,
-      Debugger: frontendData.boss.debugger,
-      OpenWindows: frontendData.boss.openWindows,
-      ShowWindows: frontendData.boss.showWindows,
       Keywords: frontendData.boss.keywords,
       CityCode: frontendData.boss.cityCode,
       CustomCityCode: frontendData.boss.customCityCode,
@@ -304,9 +298,6 @@ type ConfigAction =
 const defaultConfig: RootConfig = {
   boss: {
     sayHi: '',
-    debugger: false,
-    openWindows: false,
-    showWindows: false,
     keywords: [],
     cityCode: [],
     customCityCode: {},
@@ -374,7 +365,6 @@ interface ConfigContextType extends ConfigState {
   fetchConfig: () => Promise<void>;
   saveConfig: () => Promise<boolean>;
   updateConfig: (config: Partial<RootConfig>) => void;
-  resetConfig: () => void;
 }
 
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
@@ -487,11 +477,6 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     scheduleAutoSave();
   };
 
-  const resetConfig = () => {
-    dispatch({ type: 'SET_CONFIG', payload: defaultConfig });
-    scheduleAutoSave();
-  };
-
   useEffect(() => {
     fetchConfig();
     return () => {
@@ -508,7 +493,6 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         fetchConfig,
         saveConfig,
         updateConfig,
-        resetConfig,
       }}
     >
       {children}

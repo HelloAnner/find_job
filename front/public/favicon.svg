@@ -1,0 +1,10 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Brand background: ChatGPT green -->
+  <rect width="128" height="128" rx="26" fill="#10a37f"/>
+  <!-- Handle -->
+  <rect x="46" y="32" width="36" height="12" rx="6" fill="#ffffff"/>
+  <!-- Briefcase body -->
+  <rect x="28" y="46" width="72" height="46" rx="10" fill="#ffffff"/>
+  <!-- Latch -->
+  <rect x="60" y="62" width="8" height="8" rx="2" fill="#10a37f"/>
+</svg>

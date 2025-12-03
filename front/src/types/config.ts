@@ -1,8 +1,5 @@
 export interface BossConfig {
   sayHi: string;
-  debugger: boolean;
-  openWindows: boolean;
-  showWindows: boolean;
   keywords: string[];
   cityCode: string[];
   customCityCode: Record<string, string>;

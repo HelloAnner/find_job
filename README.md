@@ -4,16 +4,16 @@
 
 ## 特性
 - 自动化投递：关键词 × 城市组合批量搜索与沟通；每日上限（`boss.max`）与循环间隔（`boss.interval`）。
-- 登录两种路径：
-  - 无头模式使用已有 Cookie（`data/boss/cookie.json` 或 `data/boss/browser_cookie.txt`）。
-  - 可视化扫码一次后持久化 Cookie（将 `boss.openWindows: true`）。
+- 登录凭证：
+  - 默认后台静默运行，直接读取 `data/boss/cookie.json` 或 `data/boss/browser_cookie.txt`。
+  - 若需扫码，请在本地浏览器登录后导出 Cookie 写入上述文件，再同步到服务器启动。
 - 管理界面：前端 UI 首屏仅展示；修改后 ~0.8s 自动保存到 `config.yaml`。
 - AI 与通知：可选调用兼容 OpenAI 的接口生成招呼语，并通过企业微信 Webhook 推送。
 
 ## 工作流程（Overview）
 1. 启动：后端监听 `:38888`，提供静态页面与 `/api/config`。
 2. 配置：前端拉取配置，仅展示；用户改动后 `POST /api/config`，后端合并写入 `config.yaml`。
-3. 登录：优先加载 `browser_cookie.txt` → `cookie.json`；无头且无 Cookie 会直接退出；可视化模式支持扫码后保存 Cookie。
+3. 登录：优先加载 `browser_cookie.txt` → `cookie.json`；若二者皆空将直接报错退出，请先在本地写入 Cookie 文件。
 4. 投递：按城市与关键词搜索 → 过滤黑名单/不活跃 HR →（可选）AI 生成招呼 → 发起沟通 → 记录与推送 → 达到 `max` 或耗尽后休眠 `interval` 小时再跑下一轮。
 
 ## 原理（简述）
