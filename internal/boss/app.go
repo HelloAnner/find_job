@@ -59,8 +59,11 @@ type App struct {
 }
 
 var (
-	humanMouseX = -1.0
-	humanMouseY = -1.0
+    humanMouseX = -1.0
+    humanMouseY = -1.0
+    // globalWaitTimeSec 由 NewApp 根据配置初始化；用于控制跨页面操作的等待时间窗口
+    // 0 表示使用内置的较短人类化延时；>0 表示每次页面操作之间等待 [waitTime, waitTime+10] 秒
+    globalWaitTimeSec = 0
 )
 
 type DailyCounter struct {
@@ -137,7 +140,7 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 		sentJobs = map[string]string{}
 	}
 
-	app := &App{
+    app := &App{
 		cfg:               &cfg.Boss,
 		aiCfg:             cfg.AI,
 		bot:               bot.New(cfg.Bot, env),
@@ -152,7 +155,14 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 		maxChats:          cfg.Boss.MaxChat,
 		sentJobsFile:      sentJobsFile,
 		sentJobs:          sentJobs,
-	}
+    }
+    // 将等待时间（秒）设置为包级变量，供通用人类化动作使用
+    if cfg.Boss.WaitTime > 0 {
+        globalWaitTimeSec = cfg.Boss.WaitTime
+        log.Printf("[boss] 操作等待时间设置为 %d-%d 秒", cfg.Boss.WaitTime, cfg.Boss.WaitTime+10)
+    } else {
+        globalWaitTimeSec = 0
+    }
 	if cfg.Boss.EnableAI && aiClient != nil {
 		app.aiReady = make(chan error, 1)
 		go func() {
@@ -269,12 +279,12 @@ func loadBlacklists(path string) (*Blacklists, error) {
 }
 
 func (a *App) buildSearchURL(city string) string {
-	qs := url.Values{}
-	addParam := func(key, value string) {
-		if value != "" && value != config.UnlimitedCode {
-			qs.Set(key, value)
-		}
-	}
+    qs := url.Values{}
+    addParam := func(key, value string) {
+        if value != "" && value != config.UnlimitedCode {
+            qs.Set(key, value)
+        }
+    }
 	addList := func(key string, values []string) {
 		if len(values) == 0 {
 			return
@@ -286,8 +296,11 @@ func (a *App) buildSearchURL(city string) string {
 	}
 
 	addParam("city", city)
-	addParam("jobType", a.cfg.JobType)
-	addParam("salary", a.cfg.Salary)
+    addParam("jobType", a.cfg.JobType)
+    // 薪资：优先使用“期望薪资区间 expectedSalary”推导的区间码；若未设置则回落到离散 salary 码
+    if code := deriveSalaryFromExpected(a.cfg.ExpectedSalary, a.cfg.Salary); code != "" && code != config.UnlimitedCode {
+        addParam("salary", code)
+    }
 	addList("experience", a.cfg.Experience)
 	addList("degree", a.cfg.Degree)
 	addList("scale", a.cfg.Scale)
@@ -1162,10 +1175,18 @@ func sleepHuman() {
 
 // gotoWithHumanPause wraps Page.Goto with pre/post human-like pauses and throttles requests.
 func gotoWithHumanPause(page playwright.Page, url string) error {
-	sleepRandom(1200, 2600)
-	_, err := page.Goto(url)
-	sleepRandom(1000, 2000)
-	return err
+    if globalWaitTimeSec > 0 {
+        sleepRandom(globalWaitTimeSec*1000, (globalWaitTimeSec+10)*1000)
+    } else {
+        sleepRandom(1200, 2600)
+    }
+    _, err := page.Goto(url)
+    if globalWaitTimeSec > 0 {
+        sleepRandom(globalWaitTimeSec*1000, (globalWaitTimeSec+10)*1000)
+    } else {
+        sleepRandom(1000, 2000)
+    }
+    return err
 }
 
 // clickWithHumanPause moves the mouse along a short path before performing a hardware click.
@@ -1540,6 +1561,39 @@ func decodeSalary(text string) string {
 		}
 	}
 	return b.String()
+}
+
+// deriveSalaryFromExpected 根据期望薪资区间（千/月）推导Boss直聘的薪资筛选编码。
+// 约定：
+// - 若 cfgSalary 已设置（非"0"），直接返回 cfgSalary；
+// - 否则，根据 expected[0] 作为下限进行粗粒度映射：
+//   [0,3)→402, [3,5]→403, (5,10]→404, (10,20]→405, (20,50]→406, >50→407；
+// - 仅返回编码字符串；由调用方决定是否写入查询参数。
+func deriveSalaryFromExpected(expected []int, cfgSalary string) string {
+    if cfgSalary != "" && cfgSalary != config.UnlimitedCode {
+        return cfgSalary
+    }
+    if len(expected) == 0 {
+        return ""
+    }
+    min := expected[0]
+    if min <= 0 {
+        return ""
+    }
+    switch {
+    case min < 3:
+        return "402" // 3K以下
+    case min <= 5:
+        return "403" // 3-5K
+    case min <= 10:
+        return "404" // 5-10K
+    case min <= 20:
+        return "405" // 10-20K
+    case min <= 50:
+        return "406" // 20-50K
+    default:
+        return "407" // 50K以上
+    }
 }
 
 func resolveResumePath() string {

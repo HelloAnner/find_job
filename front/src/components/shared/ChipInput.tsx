@@ -68,12 +68,12 @@ export const ChipInput: React.FC<ChipInputProps> = ({
     inputRef.current?.focus();
   };
 
+  // 一键清空：不再使用浏览器 confirm，避免与“删除单个”操作产生误判
+  // 交互期望：点击“清空”立即清空；如需撤销，可手动重新输入（配合自动保存，后端会即时落盘）
   const clearAll = () => {
-    if (window.confirm(`确定要清空所有 ${values.length} 个条目吗？`)) {
-      onChange([]);
-      setInput('');
-      inputRef.current?.focus();
-    }
+    onChange([]);
+    setInput('');
+    inputRef.current?.focus();
   };
 
   const startEdit = (idx: number) => {

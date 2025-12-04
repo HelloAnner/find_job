@@ -84,8 +84,14 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update the config through updater
-	s.configUpdater.UpdateConfig(&newCfg)
+    // 标准化配置（城市/学历/经验等转换为编码；填充默认值）
+    if err := config.Normalize(&newCfg); err != nil {
+        http.Error(w, "Failed to normalize config: "+err.Error(), http.StatusBadRequest)
+        return
+    }
+
+    // Update the config through updater（内存保持与写盘一致的标准化结果）
+    s.configUpdater.UpdateConfig(&newCfg)
 
 	// Save to file
 	data, err := os.ReadFile(s.configPath)
@@ -102,7 +108,7 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update the YAML data with new values
-	// Convert config.Root to map for merging
+    // Convert config.Root to map for merging（使用YAML标签保持键名一致）
 	newData, err := yaml.Marshal(&newCfg)
 	if err != nil {
 		http.Error(w, "Failed to marshal new config: "+err.Error(), http.StatusInternalServerError)

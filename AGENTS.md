@@ -405,6 +405,55 @@
 - 修改：`front/index.html` 的 `<link rel="icon" …>` 指向 `/favicon.svg`。
 - 验证：`(cd front && npm run build)` 通过；刷新浏览器即可看到新图标。
 
+## 2025-12-04 ChipInput 清空确认移除，单项删除不再误触弹窗
+
+- 背景：反馈“职位名称/关键词”中删除某一项时会弹出“是否清空全部”的确认，影响操作流畅度。
+- 变更：移除 `ChipInput` 组件的 `window.confirm`，点击右上角“清空”将直接清空，不再弹窗；单项删除（点 `×` 或 Backspace）只会删除该项。
+- 文件：`front/src/components/shared/ChipInput.tsx`
+  - 替换 `clearAll()`：直接 `onChange([])`，不再 `window.confirm(...)`。
+- 原因：浏览器阻塞式 `confirm` 容易被误解为“删除单项”的确认；且与整个站点的“极简/即时反馈”交互风格不一致。
+- 验证：`(cd front && npm ci && npm run build)` 通过；页面上
+  - 点击某个 Chip 的 `×` 仅删除该项；
+  - 点击“清空”直接清空，不再出现弹窗；
+  - 输入框 Backspace 在为空时仅删除最后一项，不影响其它项。
+- 影响范围：`BasicSettings` 下“职位名称/关键词”“地域”的 ChipInput 行为一致更新；其他组件（Select/MultiSelect/Switch/Input）不受影响。
+
+### 交互巡检（本次一并核对）
+- MultiSelect：`清空` 为即时操作，无确认；`全选/取消全选` 正常；回车选择后自动清空搜索框。
+- Select：方向键/Enter/Esc 键行为符合预期；面板实体背景，暗色可读性正常。
+- Switch：Space/Enter 可切换，`aria-checked` 正确；
+- Input/Textarea：顶部标签布局，无浮动重叠问题；数字输入带 `min` 限制。
+- 城市 Chip：`全国/不限` 与其它城市互斥逻辑保持；
+- 凭证替换：保留自定义确认对话框（仅在检查通过且与当前不同才出现）。
+
+## 2025-12-04 配置实时同步与后端一致性（POST 归一化落盘）
+
+- 背景：前端修改后，`config.yaml` 有时未体现期望的编码值（尤其是城市等枚举），导致“前端与文件不一致/运行时读取不一致”。
+- 变更：后端在 `POST /api/config` 落盘前对配置做标准化（与 `config.Load()` 一致），确保写入文件与内存中的配置完全一致。
+- 具体实现：
+  - 新增 `internal/config/config.go: Normalize(cfg *Root)`，内部调用 `cfg.Boss.normalize()`（城市/经验/学历/规模/阶段等全部转为平台编码；默认值填充）。
+  - `internal/api/server.go`：在 `handleUpdateConfig` 中 `json.Decode` 后调用 `config.Normalize(&newCfg)`，随后再 `UpdateConfig` 与写盘。
+- 结果：
+  - UI 任意字段修改 → 约 0.8s 自动保存 → 服务端写入标准化后的 YAML（如城市名转为编码，学历/经验/规模/阶段为编码）。
+  - `GET /api/config` 返回内存中的同一份标准化配置，前后端实时一致。
+- 验证：
+  - 构建后运行服务，修改“经验/学历/薪资/间隔/机器人通知”等字段，观察 `config.yaml` 相应键（`boss.experience/degree/expectedSalary/interval`、`bot.is_send/template`）即时更新；城市将保存为编码（`0/100010000/…`）。
+  - Go 构建验证：`go build ./...` 通过。
+- 影响范围：`internal/api/server.go`、`internal/config/config.go`；前端无改动（仅依赖原有自动保存）。
+
+## 2025-12-04 配置“完全生效”核对与补齐（waitTime/expectedSalary）
+
+- 背景：前端页面上的“操作等待(秒)”与“薪资(千/月)”需在运行期实际生效。
+- 变更：
+  - 等待时间：`internal/boss/app.go` 将 `cfg.Boss.WaitTime` 应用到通用页面跳转的前后等待（`gotoWithHumanPause`）。当 `WaitTime>0` 时，每次页面操作之间等待为 `[WaitTime, WaitTime+10]` 秒；否则维持原有人类化短延时。
+  - 期望薪资：在构建搜索 URL 时，若未显式选择离散 `salary` 档位，则根据 `expectedSalary[0]` 推导 Boss 的 `salary` 区间码（402~407），从而影响搜索结果。
+- 文件：
+  - `internal/boss/app.go`：新增 `globalWaitTimeSec`、改造 `gotoWithHumanPause`；新增 `deriveSalaryFromExpected()` 并在 `buildSearchURL()` 中使用。
+- 验证：
+  - 将“操作等待(秒)”设为 5，运行时日志提示“操作等待时间设置为 5-15 秒”，页面跳转明显放缓；恢复为 0 则回到快速模式。
+  - 将“薪资(千/月)”最低填 15，搜索 URL 自动带上 `salary=405`（10-20K），搜索结果与区间匹配。
+- 影响范围：仅 Boss 投递流程的节奏与搜索条件；其余逻辑不变。
+
 
 ## 2025-12-03 前端资源本地化打包（无外网依赖）
 

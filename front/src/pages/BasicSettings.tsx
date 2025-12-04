@@ -10,7 +10,9 @@ import { MultiSelect } from '@/components/shared/MultiSelect';
 
 const experienceOptions = [
   { value: '不限', label: '不限' },
-  { value: '在校生', label: '在校/应届' },
+  { value: '在校生', label: '在校生' },
+  { value: '应届毕业生', label: '应届毕业生' },
+  { value: '经验不限', label: '经验不限' },
   { value: '1年以下', label: '1年以下' },
   { value: '1-3年', label: '1-3年' },
   { value: '3-5年', label: '3-5年' },
@@ -20,6 +22,9 @@ const experienceOptions = [
 
 const degreeOptions = [
   { value: '不限', label: '不限' },
+  { value: '初中及以下', label: '初中及以下' },
+  { value: '中专/中技', label: '中专/中技' },
+  { value: '高中', label: '高中' },
   { value: '大专', label: '大专' },
   { value: '本科', label: '本科' },
   { value: '硕士', label: '硕士' },
