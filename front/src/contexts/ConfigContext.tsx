@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef } from 'react';
 import type { RootConfig } from '@/types/config';
 import axios from 'axios';
+import { decodeCities as decodeCitiesFull, encodeCities as encodeCitiesFull } from '@/utils/cities';
 
 // 转换API返回的配置为前端使用格式（backend返回的是小写字段和编码值）
 // 注意：后端 GET /api/config 的 JSON 字段为大写（Boss/AI/Bot），这里兼容大小写两种写法
@@ -15,7 +16,7 @@ function transformApiToFrontend(apiData: any): RootConfig {
       sayHi: boss?.sayHi ?? boss?.SayHi ?? '',
       keywords: boss?.keywords ?? boss?.Keywords ?? [],
       // CityCode：后端为编码；前端展示友好文案。仅对常见编码做最小可用解码，未知编码原样显示。
-      cityCode: decodeCities(boss?.cityCode ?? boss?.CityCode ?? []),
+      cityCode: decodeCitiesFull(boss?.cityCode ?? boss?.CityCode ?? []),
       customCityCode: boss?.customCityCode ?? boss?.CustomCityCode ?? {},
       industry: boss?.industry ?? boss?.Industry ?? [],
       experience: decodeExperience(boss?.experience ?? boss?.Experience ?? []),
@@ -130,7 +131,7 @@ function transformFrontendToApi(frontendData: RootConfig): any {
     Boss: {
       SayHi: frontendData.boss.sayHi,
       Keywords: frontendData.boss.keywords,
-      CityCode: frontendData.boss.cityCode,
+      CityCode: encodeCitiesFull(frontendData.boss.cityCode),
       CustomCityCode: frontendData.boss.customCityCode,
       Industry: frontendData.boss.industry,
       Experience: encodeExperience(frontendData.boss.experience),
@@ -241,14 +242,7 @@ function encodeStage(values: string[]): string[] {
 
 const API_BASE = '/api';
 
-// 城市编码简单解码：仅处理 0(不限)、100010000(全国) 两个常见值，其余保持原样
-function decodeCities(codes: string[]): string[] {
-  return (codes || []).map((c) => {
-    if (c === '0') return '不限';
-    if (c === '100010000') return '全国';
-    return c; // 未知编码原样显示（后续可扩展自动完成/字典）
-  });
-}
+// 城市编码解码：改用前端内置字典（utils/cities），支持全量映射
 
 // 深度合并工具函数：递归合并嵌套对象
 function deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>): T {

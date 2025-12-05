@@ -454,6 +454,19 @@
   - 将“薪资(千/月)”最低填 15，搜索 URL 自动带上 `salary=405`（10-20K），搜索结果与区间匹配。
 - 影响范围：仅 Boss 投递流程的节奏与搜索条件；其余逻辑不变。
 
+## 2025-12-04 前端内置城市字典（全量映射，显示中文）
+
+- 背景：前端此前只做“全国/不限”的最小解码，其他城市会显示编码，不直观。
+- 变更：
+  - 新增 `front/src/data/cities.json`（由后端 `assets/boss/city-industry-code.json` 拷贝，内置约 2k 城市编码）。
+  - 新增 `front/src/utils/cities.ts`：提供 `codeToName/nameToCode`、`decodeCities/encodeCities`、常量 `0(不限)/100010000(全国)`。
+  - `front/src/contexts/ConfigContext.tsx`：
+    - 拉取后端配置时用 `decodeCities()` 将编码→中文名；
+    - 保存到后端时用 `encodeCities()` 将中文名→编码。
+- 结果：
+  - 页面上“地域”Chip 显示中文城市名；保存时写入编码，运行期与 YAML 一致；仍保持“全国/不限与其他城市互斥”的逻辑。
+- 构建：`(cd front && npm run build)` 通过。
+
 
 ## 2025-12-03 前端资源本地化打包（无外网依赖）
 
