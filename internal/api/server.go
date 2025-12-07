@@ -44,6 +44,7 @@ func NewServer(configPath string, cookiePath string, updater ConfigUpdater, port
 	mux.HandleFunc("GET /api/config/reload", s.handleReloadConfig)
 	mux.HandleFunc("POST /api/credentials/check", s.handleCredentialCheck)
 	mux.HandleFunc("POST /api/credentials/apply", s.handleCredentialApply)
+	mux.HandleFunc("GET /api/credentials/status", s.handleCredentialStatus)
 
 	// Static file serving - single page application support
 	mux.HandleFunc("GET /", s.handleStatic)

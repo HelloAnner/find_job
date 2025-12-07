@@ -594,3 +594,58 @@
   1) 重新组织 README 结构，突出“核心特性 / 运行流程 / 前端页面 / 快速上手 / 目录速查 / 配置文件 / 许可证”；
   2) 更新描述，明确自动保存、AI/通知流程、Playwright 依赖与脚本入口，并继续引用 `deploy.md` 获取详细部署方案。
 - 验证：无需构建；Markdown 渲染正常，新结构更易阅读。
+
+## 2025-12-07 凭证状态显示与成功后状态刷新
+
+- 诉求：上传并“确认替换”成功后，前端缺少明确反馈；“当前状态”仅显示“系统正在使用默认凭证文件”，未包含文件名与上次更新时间。
+- 实施：
+  - 后端新增接口 `GET /api/credentials/status`，返回当前凭证文件信息：`path/fileName/exists/size/lastModified`。
+  - 后端在 `POST /api/credentials/apply` 成功写入后补充返回 `lastModified`（来自落盘后的文件 `mtime`）。
+  - 前端 `CredentialsSettings`：
+    - 页面加载时调用 `/api/credentials/status`，在“当前状态”展示：
+      - 文件：`{fileName}`；
+      - 上次更新时间：`YYYY-MM-DD HH:mm:ss`（本地时区）；
+      - 若不存在则提示“未找到凭证文件，请上传”。
+    - 成功替换后保留顶部“登录凭证已更新成功”的提示，并自动刷新“当前状态”。
+- 影响范围：
+  - `internal/api/server.go`：注册 `GET /api/credentials/status`；
+  - `internal/api/credentials.go`：新增 `handleCredentialStatus` 与 `credentialStatusResponse`；`handleCredentialApply` 在写入后补充 `LastModified`。
+  - `front/src/pages/CredentialsSettings.tsx`：增加状态拉取、展示与应用成功后的刷新；新增本地时间格式化函数。
+- 验证：`(cd front && npm run build)`、`go build ./...` 通过；替换成功后“当前状态”显示 `browser_cookie.txt` 与最新时间。
+
+## 2025-12-07 运行期热读取配置（查看岗位前获取最新配置）
+
+- 诉求：运行期间用户可能随时修改配置（AI 提示/招呼语、过滤条件、间隔/等待时间、通知模板等），需要在“每一次查看岗位”之前使用最新配置。
+- 实施：
+  - `boss.App` 增加 `getCfg func() *config.Root` 与 `env` 字段；`NewApp` 签名改为 `NewApp(cfg *config.Root, env config.Env, getCfg func() *config.Root)`。
+  - 新增 `refreshConfig()`：从回调读取最新配置并更新 `a.cfg/aiCfg/maxChats`，重建 `bot.Client`，并让 `globalWaitTimeSec` 即时生效。
+  - 调用点：
+    - `Run()` 的城市循环开始前；
+    - `postJobByCity()` 入口；
+    - 每个关键词开始前；
+    - 每次岗位循环（点击/查看岗位）前。
+  - `main.go` 传入 `cm.GetConfig` 作为回调。
+- 结果：岗位查看/筛选/招呼语生成/推送等均以“最新配置”执行；城市列表如在运行中变更，将在下一城市进入时生效。
+
+### 2025-12-07 关键词列表“同轮热更新”
+
+- 诉求：在同一轮城市内，关键词数组在运行中变化也要立即生效。
+- 实施：`postJobByCity()` 将 `for _, keyword := range a.cfg.Keywords` 改为基于索引的循环，每次迭代调用 `refreshConfig()` 并重新读取 `a.cfg.Keywords`：
+  - 若新增关键词，会在后续索引被遍历到；
+  - 若减少长度，循环在索引越界时自然结束；
+  - 顺序变更按最新数组顺序执行。
+- 代码：internal/boss/app.go:432-440 附近。
+- 验证：运行过程中在前端添加/删除关键词，下一次关键词迭代立即按新列表执行；`go build ./...` 通过。
+
+### 2025-12-07 登录信息热加载（每个关键词结束后）
+
+- 诉求：用户在运行中替换 `data/boss/browser_cookie.txt` 后，无需重启即可被后续请求使用。
+- 实施：在 `postJobByCity()` 的每个关键词完成后，调用 `a.loadBrowserCookies(page)` 重新注入浏览器 Cookie；日志会提示成功与否：
+  - 成功：“已重新加载登录信息文件，后续请求将使用最新 Cookie”；
+  - 失败（如文件不存在/格式问题）仅记录日志并继续投递，不中断流程。
+- 代码：internal/boss/app.go（关键词循环尾部）。
+- 验证：
+  1) 运行中替换 `data/boss/browser_cookie.txt`；
+  2) 等待当前关键词结束，日志出现“已重新加载登录信息文件”；
+  3) 下一关键词导航/请求按新 Cookie 生效（若 Cookie 失效会在登录检测阶段报错）。
+- 验证：`go build ./...` 通过；运行过程中在前端修改 AI 文案/等待时间/筛选条件，下一次岗位点击前日志与行为即时体现（例如等待区间更改、AI 招呼语变化、过滤条件变更等）。

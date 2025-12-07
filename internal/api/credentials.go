@@ -35,6 +35,17 @@ type credentialResponse struct {
 	LastModified string   `json:"lastModified,omitempty"`
 }
 
+// credentialStatusResponse 用于前端查询“当前状态”展示
+type credentialStatusResponse struct {
+    OK           bool   `json:"ok"`
+    Path         string `json:"path"`
+    FileName     string `json:"fileName"`
+    Exists       bool   `json:"exists"`
+    Size         int64  `json:"size"`
+    LastModified string `json:"lastModified,omitempty"`
+    Message      string `json:"message"`
+}
+
 func (s *Server) handleCredentialCheck(w http.ResponseWriter, r *http.Request) {
 	var payload credentialPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -69,8 +80,12 @@ func (s *Server) handleCredentialApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp.Message = "凭证已替换"
-	s.writeJSON(w, resp)
+    resp.Message = "凭证已替换"
+    // 写入成功后补充当前文件的最新修改时间，便于前端刷新“当前状态”
+    if stat, err := os.Stat(s.cookiePath); err == nil {
+        resp.LastModified = stat.ModTime().Format(time.RFC3339)
+    }
+    s.writeJSON(w, resp)
 }
 
 func (s *Server) validateCredentialPayload(raw string, runVerification bool) (*credentialResponse, []byte, error) {
@@ -238,7 +253,41 @@ func (s *Server) writeCredentialToDisk(data []byte) error {
 }
 
 func (s *Server) writeJSON(w http.ResponseWriter, payload interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	json.NewEncoder(w).Encode(payload)
+    w.Header().Set("Content-Type", "application/json")
+    w.Header().Set("Cache-Control", "no-store")
+    json.NewEncoder(w).Encode(payload)
+}
+
+// handleCredentialStatus 返回当前系统正在使用的凭证文件的信息（路径、名称、存在性、大小、上次修改时间）
+func (s *Server) handleCredentialStatus(w http.ResponseWriter, r *http.Request) {
+    resp := &credentialStatusResponse{
+        OK:      true,
+        Path:    s.cookiePath,
+        FileName: filepath.Base(s.cookiePath),
+        Message: "",
+    }
+
+    if s.cookiePath == "" {
+        resp.OK = false
+        resp.Message = "未配置凭证文件路径"
+        s.writeJSON(w, resp)
+        return
+    }
+
+    if stat, err := os.Stat(s.cookiePath); err == nil {
+        resp.Exists = true
+        resp.Size = stat.Size()
+        resp.LastModified = stat.ModTime().Format(time.RFC3339)
+        if stat.Size() == 0 {
+            resp.Message = "凭证文件为空，请重新上传"
+        } else {
+            resp.Message = "凭证文件可用"
+        }
+    } else {
+        resp.Exists = false
+        resp.Size = 0
+        resp.Message = "未找到凭证文件"
+    }
+
+    s.writeJSON(w, resp)
 }

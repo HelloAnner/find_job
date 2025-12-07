@@ -12,6 +12,16 @@ interface CredentialResponse {
   lastModified?: string;
 }
 
+interface CredentialStatusResponse {
+  ok: boolean;
+  path: string;
+  fileName: string;
+  exists: boolean;
+  size: number;
+  lastModified?: string;
+  message: string;
+}
+
 export const CredentialsSettings: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
@@ -19,7 +29,20 @@ export const CredentialsSettings: React.FC = () => {
   const [checkResult, setCheckResult] = useState<string>('');
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [credentialDetails, setCredentialDetails] = useState<CredentialResponse | null>(null);
+  const [successTip, setSuccessTip] = useState<string>('');
+  const [currentStatus, setCurrentStatus] = useState<CredentialStatusResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 拉取当前凭证状态（文件名 + 上次更新时间）
+  const fetchCurrentStatus = async () => {
+    try {
+      const resp = await fetch('/api/credentials/status');
+      const data: CredentialStatusResponse = await resp.json();
+      setCurrentStatus(data);
+    } catch (e) {
+      // 忽略错误，保持空状态
+    }
+  };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -38,6 +61,10 @@ export const CredentialsSettings: React.FC = () => {
       }
     }
   };
+
+  React.useEffect(() => {
+    fetchCurrentStatus();
+  }, []);
 
   const handleFileCheck = async () => {
     if (!fileContent) return;
@@ -95,6 +122,11 @@ export const CredentialsSettings: React.FC = () => {
         setCredentialDetails(null);
         setSelectedFile(null);
         setFileContent('');
+        // 顶部成功提示，5 秒后自动消失
+        setSuccessTip('登录凭证已更新成功');
+        setTimeout(() => setSuccessTip(''), 5000);
+        // 刷新“当前状态”显示
+        fetchCurrentStatus();
       } else {
         setUploadStatus('error');
         setCheckResult(result.message || '应用失败');
@@ -131,11 +163,25 @@ export const CredentialsSettings: React.FC = () => {
     }
   };
 
+  // 简单的时间格式化：YYYY-MM-DD HH:mm:ss（本地时区）
+  const formatTime = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+
   return (
     <div className="flex flex-col gap-10">
       <div className="flex flex-col gap-1 items-center text-center">
         <h1 className="text-2xl font-semibold tracking-tight">登录凭证管理</h1>
         <p className="text-sm text-[#7a8a9a]">上传和管理您的登录凭证文件，确保机器人能够正常访问招聘平台。</p>
+        {successTip && (
+          <div className="mt-3 w-full max-w-2xl mx-auto bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200/70 dark:border-green-800/60 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>check_circle</span>
+            <span>{successTip}</span>
+          </div>
+        )}
       </div>
 
       <Section title="凭证文件上传" description="支持上传文本格式的登录凭证文件，系统将自动检查文件安全性和有效性。">
@@ -215,7 +261,25 @@ export const CredentialsSettings: React.FC = () => {
 
         <Field label="当前状态" hint="显示凭证文件的当前状态">
           <div className="text-sm text-slate-600 dark:text-slate-300">
-            系统正在使用默认凭证文件
+            {currentStatus ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary" style={{ fontSize: 18 }}>folder</span>
+                  <span>文件：{currentStatus.fileName || '未知'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary" style={{ fontSize: 18 }}>schedule</span>
+                  <span>
+                    上次更新时间：{currentStatus.lastModified ? formatTime(currentStatus.lastModified) : '未知'}
+                  </span>
+                </div>
+                {!currentStatus.exists && (
+                  <div className="text-amber-600 dark:text-amber-400">未找到凭证文件，请上传。</div>
+                )}
+              </div>
+            ) : (
+              <span className="text-slate-500">正在读取当前状态…</span>
+            )}
           </div>
         </Field>
       </Section>

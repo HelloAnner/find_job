@@ -36,12 +36,17 @@ const (
 
 // App is the Go port of the original Java Boss logic.
 type App struct {
-	cfg    *config.BossConfig
-	aiCfg  config.AiConfig
-	bot    *bot.Client
-	ai     *ai.Client
-	runner *play.Runner
-	black  *Blacklists
+    cfg    *config.BossConfig
+    aiCfg  config.AiConfig
+    bot    *bot.Client
+    ai     *ai.Client
+    runner *play.Runner
+    black  *Blacklists
+
+    // 获取最新配置的回调；由 main 注入 ConfigManager.GetConfig，实现“运行中热读取配置”
+    getCfg func() *config.Root
+    // 保存 env 以便在刷新配置时重建依赖（例如机器人模板变化）
+    env    config.Env
 
 	results           []Job
 	startTime         time.Time
@@ -84,7 +89,8 @@ func (dc *DailyCounter) resetIfNeeded() {
 }
 
 // NewApp wires all dependencies together.
-func NewApp(cfg *config.Root, env config.Env) (*App, error) {
+// NewApp 组装依赖；getCfg 用于在运行过程中读取最新配置。
+func NewApp(cfg *config.Root, env config.Env, getCfg func() *config.Root) (*App, error) {
 	aiClient := ai.New(env)
 	if cfg.Boss.EnableAI && aiClient == nil {
 		return nil, errors.New("启用了AI能力但未配置AI环境变量")
@@ -141,20 +147,22 @@ func NewApp(cfg *config.Root, env config.Env) (*App, error) {
 	}
 
     app := &App{
-		cfg:               &cfg.Boss,
-		aiCfg:             cfg.AI,
-		bot:               bot.New(cfg.Bot, env),
-		ai:                aiClient,
-		runner:            runner,
-		black:             black,
-		dataFile:          dataFile,
-		cookieFile:        cookieFile,
-		browserCookieFile: browserCookieFile,
-		statsFile:         statsFile,
-		stats:             stats,
-		maxChats:          cfg.Boss.MaxChat,
-		sentJobsFile:      sentJobsFile,
-		sentJobs:          sentJobs,
+        cfg:               &cfg.Boss,
+        aiCfg:             cfg.AI,
+        bot:               bot.New(cfg.Bot, env),
+        ai:                aiClient,
+        runner:            runner,
+        black:             black,
+        getCfg:            getCfg,
+        env:               env,
+        dataFile:          dataFile,
+        cookieFile:        cookieFile,
+        browserCookieFile: browserCookieFile,
+        statsFile:         statsFile,
+        stats:             stats,
+        maxChats:          cfg.Boss.MaxChat,
+        sentJobsFile:      sentJobsFile,
+        sentJobs:          sentJobs,
     }
     // 将等待时间（秒）设置为包级变量，供通用人类化动作使用
     if cfg.Boss.WaitTime > 0 {
@@ -183,18 +191,20 @@ func (a *App) Close() {
 
 // Run executes the Boss投递流程。
 func (a *App) Run() error {
-	a.startTime = time.Now()
-	page := a.runner.Page()
+    a.startTime = time.Now()
+    page := a.runner.Page()
 
 	if err := a.login(page); err != nil {
 		return err
 	}
 
-	for _, city := range a.cfg.CityCode {
-		if err := a.postJobByCity(page, city); err != nil {
-			log.Printf("[boss] 城市 %s 投递失败: %v", city, err)
-		}
-	}
+    for _, city := range a.cfg.CityCode {
+        // 每轮城市开始前刷新配置，尽量贴近实时
+        a.refreshConfig()
+        if err := a.postJobByCity(page, city); err != nil {
+            log.Printf("[boss] 城市 %s 投递失败: %v", city, err)
+        }
+    }
 
 	if len(a.results) == 0 {
 		log.Println("[boss] 未发起新的聊天…")
@@ -207,6 +217,28 @@ func (a *App) Run() error {
 
 	a.printResult()
 	return nil
+}
+
+// refreshConfig 从回调中拉取最新配置，并更新运行期用到的关键字段。
+func (a *App) refreshConfig() {
+    if a == nil || a.getCfg == nil {
+        return
+    }
+    latest := a.getCfg()
+    if latest == nil {
+        return
+    }
+    a.cfg = &latest.Boss
+    a.aiCfg = latest.AI
+    a.maxChats = latest.Boss.MaxChat
+    // 机器人模板/开关变化时，重建客户端（HOOK_URL 来自 env，不变）
+    a.bot = bot.New(latest.Bot, a.env)
+    // 等待时间变更即时生效
+    if latest.Boss.WaitTime > 0 {
+        globalWaitTimeSec = latest.Boss.WaitTime
+    } else {
+        globalWaitTimeSec = 0
+    }
 }
 
 func (a *App) printResult() {
@@ -392,8 +424,18 @@ func (a *App) loadBrowserCookies(page playwright.Page) error {
 }
 
 func (a *App) postJobByCity(page playwright.Page, city string) error {
-	searchURL := a.buildSearchURL(city)
-	for _, keyword := range a.cfg.Keywords {
+    // 城市开始前刷新配置（影响关键词/过滤项/薪资/AI等）
+    a.refreshConfig()
+    searchURL := a.buildSearchURL(city)
+    // 关键词列表热更新：每次循环都从最新配置读取，支持运行中新增/删除/改序
+    for kwIndex := 0; ; kwIndex++ {
+        // 每个关键词开始前刷新一次
+        a.refreshConfig()
+        keys := a.cfg.Keywords
+        if kwIndex >= len(keys) {
+            break
+        }
+        keyword := keys[kwIndex]
 		if !a.canSendMore() {
 			log.Printf("[boss] 已达每日投递上限(%d)，停止后续关键词处理", a.maxChats)
 			return nil
@@ -439,12 +481,14 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 		if count > 50 {
 			count = 50
 		}
-		postCount := 0
-		for i := 0; i < count; i++ {
-			if !a.canSendMore() {
-				log.Printf("[boss] 已达每日投递上限(%d)，停止当前关键词剩余岗位", a.maxChats)
-				return nil
-			}
+        postCount := 0
+        for i := 0; i < count; i++ {
+            // 每次“查看岗位”前刷新配置，确保使用最新策略
+            a.refreshConfig()
+            if !a.canSendMore() {
+                log.Printf("[boss] 已达每日投递上限(%d)，停止当前关键词剩余岗位", a.maxChats)
+                return nil
+            }
 
 			sent := false
 			cards = page.Locator(jobCardSelector)
@@ -533,7 +577,13 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 			postCount++
 			restBetweenJobs(sent)
 		}
-		log.Printf("[boss] 【%s】岗位已投递完毕！已投递岗位数量:%d", keyword, postCount)
+        log.Printf("[boss] 【%s】岗位已投递完毕！已投递岗位数量:%d", keyword, postCount)
+        // 关键字结束后，重新加载登录信息（browser_cookie.txt），确保不中断的情况下使用最新凭证
+        if err := a.loadBrowserCookies(page); err != nil {
+            log.Printf("[boss] 重新加载登录信息失败（忽略继续）: %v", err)
+        } else {
+            log.Printf("[boss] 已重新加载登录信息文件，后续请求将使用最新 Cookie")
+        }
 	}
 	return nil
 }

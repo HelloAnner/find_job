@@ -57,7 +57,7 @@ dist/
 
 data/boss/sent_jobs.json
 
-data/boss/stats.json
+data
 
 node_modules
 
