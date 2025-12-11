@@ -7,8 +7,29 @@
 ---
 
 ## 脚本角色对比
-- scripts/start.sh：源码 + Docker 的本地启动脚本；先在本机构建前端与镜像，再启动容器。适合本地开发/验证最新改动。
+- scripts/up-compose.sh：推荐。构建镜像并通过 docker compose 启动“两容器”模式（browserless/chrome + 本应用），更省内存，浏览器可复用。
+- scripts/start.sh：源码 + Docker 的本地启动脚本；先在本机构建前端与镜像，再启动容器。适合本地开发/验证最新改动。（资源占用较高，不再推荐）
 - scripts/start-server.sh：纯 Docker + 私有 Hub 的服务器启动脚本；不会构建镜像，不需要源码/Node/Go，仅从仓库拉取镜像并运行，更适合服务器部署。详细见第 6 节。
+
+
+## 0) docker compose（推荐，低内存）
+
+两容器解耦：
+
+- browserless/chrome：共享 Chromium（端口 3000），预热并复用浏览器进程；
+- 本项目镜像：仅 Go 应用 + 静态前端，通过 Playwright `pw.Chromium.Connect` 以 WebSocket 连接 browserless。
+
+一键启动：
+
+```bash
+./scripts/up-compose.sh
+```
+
+启动完成：
+- 应用：http://localhost:38888
+- Browserless WS：ws://localhost:3000/playwright
+
+如需手动：`docker compose up -d --build`（项目已提供 `docker-compose.yml`）。
 
 
 ## 1) 本地一键启动（源码 + Docker，本机）
@@ -69,8 +90,10 @@ docker run -d --name boss-runner --restart unless-stopped \
 ```bash
 (cd front && npm ci && npm run build)
 
-go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5200.1 install chromium
+# 方式 A：使用本机/容器的 browserless（推荐）
+BROWSERLESS_URL=ws://localhost:3000/playwright?launch=1 go run .
 
+# 方式 B：本地拉起浏览器（仅开发调试，资源占用高）
 go run .
 ```
 
@@ -83,8 +106,8 @@ go run .
 两个终端并行：
 
 ```bash
-# 后端 + API（端口 38888）
-go run .
+# 后端 + API（端口 38888），连接本机 browserless
+BROWSERLESS_URL=ws://localhost:3000/playwright?launch=1 go run .
 
 # 前端（端口 3000，已代理 /api -> 38888）
 (cd front && npm ci && npm run dev)

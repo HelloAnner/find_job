@@ -28,12 +28,12 @@
 ![配置页面预览](images/config.png)
 
 ## 快速上手
-1. **安装依赖**：Go ≥ 1.25、Node ≥ 20、Playwright 浏览器（`go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5200.1 install chromium`）。
+1. **安装依赖**：Go ≥ 1.25、Node ≥ 20。运行时通过 Browserless 远程浏览器，无需在本机下载浏览器。
 2. **构建前端**：`(cd front && npm ci && npm run build)`，产物在 `front/dist`。
 3. **准备 Cookie**：在本地浏览器登陆 BOSS，导出 Cookie 到 `data/boss/browser_cookie.txt` 或 `data/boss/cookie.json`。
-4. **启动**：`go run .`（或执行 `scripts/start.sh` 使用 Docker）。首次访问 `http://localhost:38888` 即可进入管理界面。
+4. **启动**：推荐 `docker compose` 两容器（browserless + boss）：`./scripts/up-compose.sh`。源码模式请设置 `BROWSERLESS_URL=ws://localhost:3000/playwright?launch=1 go run .`。
 
-更多部署形态（Docker、源码调试、服务器脚本）请查看 [deploy.md](deploy.md)。
+更多部署形态（推荐 docker compose 双容器 / 源码调试 / 服务器脚本）请查看 [deploy.md](deploy.md)。
 
 ## 目录速查
 - `main.go`：入口，加载配置与 .env，启动 API + 投递循环。
@@ -44,7 +44,8 @@
 - `internal/bot/`：企业微信机器人客户端（Webhook + Markdown 模板渲染）。
 - `internal/play/`：Playwright 初始化、反检测脚本与浏览器缓存清理。
 - `front/`：Vite + React 管理界面，`npm run dev` 端口 3000；生产构建产物由后端静态托管。
-- `scripts/`：`start.sh`（本地构建 + Docker 运行）、`start-server.sh`（服务器拉取镜像再运行）。
+- `scripts/`：`up-compose.sh`（browserless + boss 双容器，一键启动，推荐）、`start-server.sh`（服务器拉取镜像再运行）。
+- 根目录 `start.sh`：等价执行 `scripts/up-compose.sh`，默认同时启动 `browserless/chromium` 与本应用容器。
 - `data/`：运行期数据（Cookie、黑名单、统计等）。
 
 ## 配置文件

@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  browserless:
+    image: ghcr.io/browserless/chromium:latest
+    container_name: browserless
+    restart: unless-stopped
+    shm_size: 1g
+    environment:
+      # v2 需要 token；此处示例值为 devtoken，可按需修改
+      - TOKEN=devtoken
+      # 默认会话超时仅 30s，这里提高到 10 分钟，避免长流程被中断
+      - TIMEOUT=600000
+    ports:
+      - "3000:3000"
+
+  boss:
+    build: .
+    image: get_jobs-boss:latest
+    container_name: boss-runner
+    depends_on:
+      - browserless
+    restart: unless-stopped
+    environment:
+      # 指向同一 docker network 的 ws 地址（Browserless v2 的 Playwright 端点）
+      - BROWSERLESS_URL=ws://browserless:3000/chromium/playwright?token=devtoken&timeout=600000
+      - BROWSERLESS_MODE=playwright
+      - PW_SLOWMO_MS=50
+      - TZ=Asia/Shanghai
+    ports:
+      - "38888:38888"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./.env:/app/.env:ro
+      - ./data:/app/data
+
+networks:
+  default:
+    name: get_jobs_net

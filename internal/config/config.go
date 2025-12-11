@@ -57,17 +57,17 @@ type BotConfig struct {
 
 // AiConfig provides the LLM introduction and prompt template.
 type AiConfig struct {
-    Introduce string `yaml:"introduce"`
-    Prompt    string `yaml:"prompt"`
+	Introduce string `yaml:"introduce"`
+	Prompt    string `yaml:"prompt"`
 }
 
 // Normalize applies the same normalization rules as Load() to an in‑memory config.
 // 用于在不经由文件读取的场景（例如 API 更新）下，对前端传入的可读值进行标准化（编码/默认值）。
 func Normalize(cfg *Root) error {
-    if cfg == nil {
-        return fmt.Errorf("nil config")
-    }
-    return cfg.Boss.normalize()
+	if cfg == nil {
+		return fmt.Errorf("nil config")
+	}
+	return cfg.Boss.normalize()
 }
 
 // Load parses config.yaml and normalizes Boss-specific selector codes.

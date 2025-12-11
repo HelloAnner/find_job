@@ -3,12 +3,10 @@ set -e
 
 cd /app
 
-PLAYWRIGHT_DRIVER_PATH="${PLAYWRIGHT_DRIVER_PATH:-/usr/local/lib/node_modules/playwright/node_modules/playwright-core}"
-PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/root/.cache/ms-playwright}"
-PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS="${PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS:-true}"
-PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD="${PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD:-1}"
-export PLAYWRIGHT_DRIVER_PATH PLAYWRIGHT_BROWSERS_PATH \
-  PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+# 运行在 browserless/chrome 外接模式，不再内置浏览器与驱动
+BROWSERLESS_URL="${BROWSERLESS_URL:-}"
+BROWSERLESS_MODE="${BROWSERLESS_MODE:-playwright}"
+export BROWSERLESS_URL BROWSERLESS_MODE
 
 if [ ! -f "config.yaml" ]; then
   echo "[boss-entrypoint] 缺少 /app/config.yaml，请通过 volume 挂载真实配置" >&2
@@ -20,35 +18,11 @@ if [ ! -f ".env" ]; then
   exit 1
 fi
 
-# 检查Playwright驱动关键文件
-check_driver_file() {
-  local rel="$1"
-  local abs="$PLAYWRIGHT_DRIVER_PATH/$rel"
-  if [ ! -e "$abs" ]; then
-    echo "[boss-entrypoint] 缺少 Playwright driver 文件: $abs" >&2
-    exit 1
-  fi
-}
-
-if [ ! -d "$PLAYWRIGHT_DRIVER_PATH" ]; then
-  echo "[boss-entrypoint] 未找到 Playwright driver 目录: $PLAYWRIGHT_DRIVER_PATH" >&2
-  exit 1
-fi
-
-check_driver_file node
-check_driver_file package/package.json
-check_driver_file package/cli.js
-check_driver_file package/index.js
-check_driver_file package/lib/server/index.js
-
-if [ ! -d "$PLAYWRIGHT_BROWSERS_PATH" ]; then
-  echo "[boss-entrypoint] 未找到 Playwright 浏览器缓存: $PLAYWRIGHT_BROWSERS_PATH" >&2
-  exit 1
-fi
-
-if ! find "$PLAYWRIGHT_BROWSERS_PATH" -maxdepth 1 -type d -name 'chromium-*' | grep -q .; then
-  echo "[boss-entrypoint] 浏览器缓存中缺少 chromium-* 目录" >&2
-  exit 1
+# 运行提示：如果未设置 BROWSERLESS_URL，将由程序本地拉起浏览器（开发模式）
+if [ -z "$BROWSERLESS_URL" ]; then
+  echo "[boss-entrypoint] WARN: 未设置 BROWSERLESS_URL，将尝试本地启动浏览器（仅开发调试用）。" >&2
+else
+  echo "[boss-entrypoint] 使用外接浏览器: $BROWSERLESS_URL (mode=$BROWSERLESS_MODE)"
 fi
 
 mkdir -p /app/data/boss

@@ -11,7 +11,7 @@ COPY front/ ./
 RUN npm run build
 
 ###############################################
-# 2) Go 构建阶段：编译主程序并预装 Playwright 驱动
+# 2) Go 构建阶段：编译主程序并准备 Playwright driver（不携带浏览器）
 ###############################################
 FROM m.daocloud.io/docker.io/golang:1.25.3 AS builder
 
@@ -34,61 +34,35 @@ COPY . .
 # 针对目标平台编译（由 buildx 传入 TARGETOS/TARGETARCH）
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o /out/boss ./
 
-# 预先安装 Playwright driver 和浏览器缓存，避免运行时重复下载
+# 准备 Playwright driver（仅 driver，无浏览器），用于通过 ws 连接 browserless
 ENV PLAYWRIGHT_DRIVER_PATH=/out/playwright/driver \
-    PLAYWRIGHT_BROWSERS_PATH=/out/playwright/browsers
+    PLAYWRIGHT_BROWSERS_PATH=/out/playwright/browsers \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN mkdir -p "$PLAYWRIGHT_DRIVER_PATH" "$PLAYWRIGHT_BROWSERS_PATH" \
-    && go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5200.1 install chromium
+    && go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5200.1 --version \
+    && rm -rf "$PLAYWRIGHT_BROWSERS_PATH" || true
 
 ###############################################
 # 3) 运行时阶段：最小化镜像，集成浏览器依赖
 ###############################################
 FROM m.daocloud.io/docker.io/debian:bookworm-slim
 
-# 设置上海时区
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata && \
+# 设置上海时区（仅基础包）
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata ca-certificates && \
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 设置环境变量
-ENV PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright/browsers \
+ENV TZ=Asia/Shanghai \
     PLAYWRIGHT_DRIVER_PATH=/opt/playwright/driver \
-    TZ=Asia/Shanghai
+    PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# 安装 Playwright 运行所需的系统依赖
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        fonts-liberation \
-        libasound2 \
-        libatk-bridge2.0-0 \
-        libatk1.0-0 \
-        libcups2 \
-        libdrm2 \
-        libgbm1 \
-        libglib2.0-0 \
-        libgtk-3-0 \
-        libnspr4 \
-        libnss3 \
-        libx11-6 \
-        libx11-xcb1 \
-        libxcb1 \
-        libxcomposite1 \
-        libxdamage1 \
-        libxext6 \
-        libxfixes3 \
-        libxrandr2 \
-        libxshmfence1 \
-        wget \
-        xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
+# 不再安装本地浏览器依赖；通过 Browserless 远程浏览器运行
 
 WORKDIR /app
 COPY --from=builder /out/boss /app/boss
-COPY --from=builder /out/playwright /opt/playwright
+COPY --from=builder /out/playwright/driver /opt/playwright/driver
 COPY assets ./assets
 COPY --from=builder /src/front/dist ./front/dist
 COPY config.yaml ./config.yaml

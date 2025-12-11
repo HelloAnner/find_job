@@ -11,9 +11,9 @@ import (
 )
 
 type ConfigManager struct {
-	mu   sync.RWMutex
-	cfg  *config.Root
-	env  config.Env
+	mu  sync.RWMutex
+	cfg *config.Root
+	env config.Env
 }
 
 func NewConfigManager() (*ConfigManager, error) {
@@ -69,7 +69,7 @@ func main() {
 		env := cm.GetEnv()
 
 		interval := time.Duration(cfg.Boss.Interval) * time.Hour
-    app, err := boss.NewApp(cfg, env, cm.GetConfig)
+		app, err := boss.NewApp(cfg, env, cm.GetConfig)
 		if err != nil {
 			log.Fatalf("初始化Boss应用失败: %v", err)
 		}

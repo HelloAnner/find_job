@@ -36,17 +36,17 @@ const (
 
 // App is the Go port of the original Java Boss logic.
 type App struct {
-    cfg    *config.BossConfig
-    aiCfg  config.AiConfig
-    bot    *bot.Client
-    ai     *ai.Client
-    runner *play.Runner
-    black  *Blacklists
+	cfg    *config.BossConfig
+	aiCfg  config.AiConfig
+	bot    *bot.Client
+	ai     *ai.Client
+	runner *play.Runner
+	black  *Blacklists
 
-    // 获取最新配置的回调；由 main 注入 ConfigManager.GetConfig，实现“运行中热读取配置”
-    getCfg func() *config.Root
-    // 保存 env 以便在刷新配置时重建依赖（例如机器人模板变化）
-    env    config.Env
+	// 获取最新配置的回调；由 main 注入 ConfigManager.GetConfig，实现“运行中热读取配置”
+	getCfg func() *config.Root
+	// 保存 env 以便在刷新配置时重建依赖（例如机器人模板变化）
+	env config.Env
 
 	results           []Job
 	startTime         time.Time
@@ -64,11 +64,11 @@ type App struct {
 }
 
 var (
-    humanMouseX = -1.0
-    humanMouseY = -1.0
-    // globalWaitTimeSec 由 NewApp 根据配置初始化；用于控制跨页面操作的等待时间窗口
-    // 0 表示使用内置的较短人类化延时；>0 表示每次页面操作之间等待 [waitTime, waitTime+10] 秒
-    globalWaitTimeSec = 0
+	humanMouseX = -1.0
+	humanMouseY = -1.0
+	// globalWaitTimeSec 由 NewApp 根据配置初始化；用于控制跨页面操作的等待时间窗口
+	// 0 表示使用内置的较短人类化延时；>0 表示每次页面操作之间等待 [waitTime, waitTime+10] 秒
+	globalWaitTimeSec = 0
 )
 
 type DailyCounter struct {
@@ -146,31 +146,31 @@ func NewApp(cfg *config.Root, env config.Env, getCfg func() *config.Root) (*App,
 		sentJobs = map[string]string{}
 	}
 
-    app := &App{
-        cfg:               &cfg.Boss,
-        aiCfg:             cfg.AI,
-        bot:               bot.New(cfg.Bot, env),
-        ai:                aiClient,
-        runner:            runner,
-        black:             black,
-        getCfg:            getCfg,
-        env:               env,
-        dataFile:          dataFile,
-        cookieFile:        cookieFile,
-        browserCookieFile: browserCookieFile,
-        statsFile:         statsFile,
-        stats:             stats,
-        maxChats:          cfg.Boss.MaxChat,
-        sentJobsFile:      sentJobsFile,
-        sentJobs:          sentJobs,
-    }
-    // 将等待时间（秒）设置为包级变量，供通用人类化动作使用
-    if cfg.Boss.WaitTime > 0 {
-        globalWaitTimeSec = cfg.Boss.WaitTime
-        log.Printf("[boss] 操作等待时间设置为 %d-%d 秒", cfg.Boss.WaitTime, cfg.Boss.WaitTime+10)
-    } else {
-        globalWaitTimeSec = 0
-    }
+	app := &App{
+		cfg:               &cfg.Boss,
+		aiCfg:             cfg.AI,
+		bot:               bot.New(cfg.Bot, env),
+		ai:                aiClient,
+		runner:            runner,
+		black:             black,
+		getCfg:            getCfg,
+		env:               env,
+		dataFile:          dataFile,
+		cookieFile:        cookieFile,
+		browserCookieFile: browserCookieFile,
+		statsFile:         statsFile,
+		stats:             stats,
+		maxChats:          cfg.Boss.MaxChat,
+		sentJobsFile:      sentJobsFile,
+		sentJobs:          sentJobs,
+	}
+	// 将等待时间（秒）设置为包级变量，供通用人类化动作使用
+	if cfg.Boss.WaitTime > 0 {
+		globalWaitTimeSec = cfg.Boss.WaitTime
+		log.Printf("[boss] 操作等待时间设置为 %d-%d 秒", cfg.Boss.WaitTime, cfg.Boss.WaitTime+10)
+	} else {
+		globalWaitTimeSec = 0
+	}
 	if cfg.Boss.EnableAI && aiClient != nil {
 		app.aiReady = make(chan error, 1)
 		go func() {
@@ -191,20 +191,20 @@ func (a *App) Close() {
 
 // Run executes the Boss投递流程。
 func (a *App) Run() error {
-    a.startTime = time.Now()
-    page := a.runner.Page()
+	a.startTime = time.Now()
+	page := a.runner.Page()
 
 	if err := a.login(page); err != nil {
 		return err
 	}
 
-    for _, city := range a.cfg.CityCode {
-        // 每轮城市开始前刷新配置，尽量贴近实时
-        a.refreshConfig()
-        if err := a.postJobByCity(page, city); err != nil {
-            log.Printf("[boss] 城市 %s 投递失败: %v", city, err)
-        }
-    }
+	for _, city := range a.cfg.CityCode {
+		// 每轮城市开始前刷新配置，尽量贴近实时
+		a.refreshConfig()
+		if err := a.postJobByCity(page, city); err != nil {
+			log.Printf("[boss] 城市 %s 投递失败: %v", city, err)
+		}
+	}
 
 	if len(a.results) == 0 {
 		log.Println("[boss] 未发起新的聊天…")
@@ -221,24 +221,24 @@ func (a *App) Run() error {
 
 // refreshConfig 从回调中拉取最新配置，并更新运行期用到的关键字段。
 func (a *App) refreshConfig() {
-    if a == nil || a.getCfg == nil {
-        return
-    }
-    latest := a.getCfg()
-    if latest == nil {
-        return
-    }
-    a.cfg = &latest.Boss
-    a.aiCfg = latest.AI
-    a.maxChats = latest.Boss.MaxChat
-    // 机器人模板/开关变化时，重建客户端（HOOK_URL 来自 env，不变）
-    a.bot = bot.New(latest.Bot, a.env)
-    // 等待时间变更即时生效
-    if latest.Boss.WaitTime > 0 {
-        globalWaitTimeSec = latest.Boss.WaitTime
-    } else {
-        globalWaitTimeSec = 0
-    }
+	if a == nil || a.getCfg == nil {
+		return
+	}
+	latest := a.getCfg()
+	if latest == nil {
+		return
+	}
+	a.cfg = &latest.Boss
+	a.aiCfg = latest.AI
+	a.maxChats = latest.Boss.MaxChat
+	// 机器人模板/开关变化时，重建客户端（HOOK_URL 来自 env，不变）
+	a.bot = bot.New(latest.Bot, a.env)
+	// 等待时间变更即时生效
+	if latest.Boss.WaitTime > 0 {
+		globalWaitTimeSec = latest.Boss.WaitTime
+	} else {
+		globalWaitTimeSec = 0
+	}
 }
 
 func (a *App) printResult() {
@@ -311,12 +311,12 @@ func loadBlacklists(path string) (*Blacklists, error) {
 }
 
 func (a *App) buildSearchURL(city string) string {
-    qs := url.Values{}
-    addParam := func(key, value string) {
-        if value != "" && value != config.UnlimitedCode {
-            qs.Set(key, value)
-        }
-    }
+	qs := url.Values{}
+	addParam := func(key, value string) {
+		if value != "" && value != config.UnlimitedCode {
+			qs.Set(key, value)
+		}
+	}
 	addList := func(key string, values []string) {
 		if len(values) == 0 {
 			return
@@ -328,11 +328,11 @@ func (a *App) buildSearchURL(city string) string {
 	}
 
 	addParam("city", city)
-    addParam("jobType", a.cfg.JobType)
-    // 薪资：优先使用“期望薪资区间 expectedSalary”推导的区间码；若未设置则回落到离散 salary 码
-    if code := deriveSalaryFromExpected(a.cfg.ExpectedSalary, a.cfg.Salary); code != "" && code != config.UnlimitedCode {
-        addParam("salary", code)
-    }
+	addParam("jobType", a.cfg.JobType)
+	// 薪资：优先使用“期望薪资区间 expectedSalary”推导的区间码；若未设置则回落到离散 salary 码
+	if code := deriveSalaryFromExpected(a.cfg.ExpectedSalary, a.cfg.Salary); code != "" && code != config.UnlimitedCode {
+		addParam("salary", code)
+	}
 	addList("experience", a.cfg.Experience)
 	addList("degree", a.cfg.Degree)
 	addList("scale", a.cfg.Scale)
@@ -424,18 +424,18 @@ func (a *App) loadBrowserCookies(page playwright.Page) error {
 }
 
 func (a *App) postJobByCity(page playwright.Page, city string) error {
-    // 城市开始前刷新配置（影响关键词/过滤项/薪资/AI等）
-    a.refreshConfig()
-    searchURL := a.buildSearchURL(city)
-    // 关键词列表热更新：每次循环都从最新配置读取，支持运行中新增/删除/改序
-    for kwIndex := 0; ; kwIndex++ {
-        // 每个关键词开始前刷新一次
-        a.refreshConfig()
-        keys := a.cfg.Keywords
-        if kwIndex >= len(keys) {
-            break
-        }
-        keyword := keys[kwIndex]
+	// 城市开始前刷新配置（影响关键词/过滤项/薪资/AI等）
+	a.refreshConfig()
+	searchURL := a.buildSearchURL(city)
+	// 关键词列表热更新：每次循环都从最新配置读取，支持运行中新增/删除/改序
+	for kwIndex := 0; ; kwIndex++ {
+		// 每个关键词开始前刷新一次
+		a.refreshConfig()
+		keys := a.cfg.Keywords
+		if kwIndex >= len(keys) {
+			break
+		}
+		keyword := keys[kwIndex]
 		if !a.canSendMore() {
 			log.Printf("[boss] 已达每日投递上限(%d)，停止后续关键词处理", a.maxChats)
 			return nil
@@ -481,14 +481,14 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 		if count > 50 {
 			count = 50
 		}
-        postCount := 0
-        for i := 0; i < count; i++ {
-            // 每次“查看岗位”前刷新配置，确保使用最新策略
-            a.refreshConfig()
-            if !a.canSendMore() {
-                log.Printf("[boss] 已达每日投递上限(%d)，停止当前关键词剩余岗位", a.maxChats)
-                return nil
-            }
+		postCount := 0
+		for i := 0; i < count; i++ {
+			// 每次“查看岗位”前刷新配置，确保使用最新策略
+			a.refreshConfig()
+			if !a.canSendMore() {
+				log.Printf("[boss] 已达每日投递上限(%d)，停止当前关键词剩余岗位", a.maxChats)
+				return nil
+			}
 
 			sent := false
 			cards = page.Locator(jobCardSelector)
@@ -577,13 +577,13 @@ func (a *App) postJobByCity(page playwright.Page, city string) error {
 			postCount++
 			restBetweenJobs(sent)
 		}
-        log.Printf("[boss] 【%s】岗位已投递完毕！已投递岗位数量:%d", keyword, postCount)
-        // 关键字结束后，重新加载登录信息（browser_cookie.txt），确保不中断的情况下使用最新凭证
-        if err := a.loadBrowserCookies(page); err != nil {
-            log.Printf("[boss] 重新加载登录信息失败（忽略继续）: %v", err)
-        } else {
-            log.Printf("[boss] 已重新加载登录信息文件，后续请求将使用最新 Cookie")
-        }
+		log.Printf("[boss] 【%s】岗位已投递完毕！已投递岗位数量:%d", keyword, postCount)
+		// 关键字结束后，重新加载登录信息（browser_cookie.txt），确保不中断的情况下使用最新凭证
+		if err := a.loadBrowserCookies(page); err != nil {
+			log.Printf("[boss] 重新加载登录信息失败（忽略继续）: %v", err)
+		} else {
+			log.Printf("[boss] 已重新加载登录信息文件，后续请求将使用最新 Cookie")
+		}
 	}
 	return nil
 }
@@ -1225,18 +1225,18 @@ func sleepHuman() {
 
 // gotoWithHumanPause wraps Page.Goto with pre/post human-like pauses and throttles requests.
 func gotoWithHumanPause(page playwright.Page, url string) error {
-    if globalWaitTimeSec > 0 {
-        sleepRandom(globalWaitTimeSec*1000, (globalWaitTimeSec+10)*1000)
-    } else {
-        sleepRandom(1200, 2600)
-    }
-    _, err := page.Goto(url)
-    if globalWaitTimeSec > 0 {
-        sleepRandom(globalWaitTimeSec*1000, (globalWaitTimeSec+10)*1000)
-    } else {
-        sleepRandom(1000, 2000)
-    }
-    return err
+	if globalWaitTimeSec > 0 {
+		sleepRandom(globalWaitTimeSec*1000, (globalWaitTimeSec+10)*1000)
+	} else {
+		sleepRandom(1200, 2600)
+	}
+	_, err := page.Goto(url)
+	if globalWaitTimeSec > 0 {
+		sleepRandom(globalWaitTimeSec*1000, (globalWaitTimeSec+10)*1000)
+	} else {
+		sleepRandom(1000, 2000)
+	}
+	return err
 }
 
 // clickWithHumanPause moves the mouse along a short path before performing a hardware click.
@@ -1615,35 +1615,35 @@ func decodeSalary(text string) string {
 
 // deriveSalaryFromExpected 根据期望薪资区间（千/月）推导Boss直聘的薪资筛选编码。
 // 约定：
-// - 若 cfgSalary 已设置（非"0"），直接返回 cfgSalary；
-// - 否则，根据 expected[0] 作为下限进行粗粒度映射：
-//   [0,3)→402, [3,5]→403, (5,10]→404, (10,20]→405, (20,50]→406, >50→407；
-// - 仅返回编码字符串；由调用方决定是否写入查询参数。
+//   - 若 cfgSalary 已设置（非"0"），直接返回 cfgSalary；
+//   - 否则，根据 expected[0] 作为下限进行粗粒度映射：
+//     [0,3)→402, [3,5]→403, (5,10]→404, (10,20]→405, (20,50]→406, >50→407；
+//   - 仅返回编码字符串；由调用方决定是否写入查询参数。
 func deriveSalaryFromExpected(expected []int, cfgSalary string) string {
-    if cfgSalary != "" && cfgSalary != config.UnlimitedCode {
-        return cfgSalary
-    }
-    if len(expected) == 0 {
-        return ""
-    }
-    min := expected[0]
-    if min <= 0 {
-        return ""
-    }
-    switch {
-    case min < 3:
-        return "402" // 3K以下
-    case min <= 5:
-        return "403" // 3-5K
-    case min <= 10:
-        return "404" // 5-10K
-    case min <= 20:
-        return "405" // 10-20K
-    case min <= 50:
-        return "406" // 20-50K
-    default:
-        return "407" // 50K以上
-    }
+	if cfgSalary != "" && cfgSalary != config.UnlimitedCode {
+		return cfgSalary
+	}
+	if len(expected) == 0 {
+		return ""
+	}
+	min := expected[0]
+	if min <= 0 {
+		return ""
+	}
+	switch {
+	case min < 3:
+		return "402" // 3K以下
+	case min <= 5:
+		return "403" // 3-5K
+	case min <= 10:
+		return "404" // 5-10K
+	case min <= 20:
+		return "405" // 10-20K
+	case min <= 50:
+		return "406" // 20-50K
+	default:
+		return "407" // 50K以上
+	}
 }
 
 func resolveResumePath() string {

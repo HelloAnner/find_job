@@ -649,3 +649,29 @@
   2) 等待当前关键词结束，日志出现“已重新加载登录信息文件”；
   3) 下一关键词导航/请求按新 Cookie 生效（若 Cookie 失效会在登录检测阶段报错）。
 - 验证：`go build ./...` 通过；运行过程中在前端修改 AI 文案/等待时间/筛选条件，下一次岗位点击前日志与行为即时体现（例如等待区间更改、AI 招呼语变化、过滤条件变更等）。
+
+## 2025-12-11 浏览器解耦与低内存部署（browserless/chrome + docker-compose）
+
+- 目标：将原“一体镜像（内置浏览器）”改为“两容器解耦”。
+  - 浏览器：`browserless/chrome`（端口 3000，开启 `PLAYWRIGHT_CHROMIUM`，提供 `/playwright` WS 端点）。
+  - 应用：本项目镜像仅包含 Go 程序与前端静态资源，通过 `pw.Chromium.Connect` 连接浏览器。
+
+### 改动
+- 代码：`internal/play/playwright.go`
+  - 新增 `BROWSERLESS_URL`（ws 地址，如 `ws://browserless:3000/playwright?launch=1`）、`BROWSERLESS_MODE`（playwright/cdp，默认 playwright）、`PW_SLOWMO_MS`。优先用 `Connect`，失败自动回退 `ConnectOverCDP`，均带重试；未配置时回退本地 `Launch`（仅开发）。
+- Docker：`Dockerfile`
+  - 构建阶段预装 Playwright driver（仅 driver，不下载浏览器），运行时复制到 `/opt/playwright/driver`；删除本地浏览器系统依赖安装，减小镜像与运行内存。
+  - 运行时设置 `PLAYWRIGHT_DRIVER_PATH` 与 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`。
+- Entrypoint：`docker/boss-entrypoint.sh` 去除本地浏览器/driver 强校验，增加外接浏览器提示。
+- Compose：新增 `docker-compose.yml` 与 `scripts/up-compose.sh`，默认启动 `browserless` + `boss` 两服务。
+- 文档：更新 `README.md`、`deploy.md`，将“docker compose 双容器”设为推荐方案；源码模式给出 `BROWSERLESS_URL` 示例。
+
+### 验证
+- `go build ./...` 通过；
+- `docker compose up -d --build` 后：
+  - `http://localhost:38888` 可访问；
+  - 日志含 `[playwright] 使用外接浏览器: ws://browserless:3000/...`；
+  - 投递流程、AI/推送、自动保存一致；单机内存占用相较单镜像明显降低。
+
+### 迁移
+- 保留旧 `scripts/start.sh`（单镜像）以兼容历史，但不再推荐；优先使用 `./scripts/up-compose.sh`。

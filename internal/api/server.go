@@ -20,20 +20,20 @@ type ConfigUpdater interface {
 }
 
 type Server struct {
-	configPath   string
-	cookiePath   string
+	configPath    string
+	cookiePath    string
 	configUpdater ConfigUpdater
-	mu           sync.RWMutex
-	server       *http.Server
-	staticDir    string
+	mu            sync.RWMutex
+	server        *http.Server
+	staticDir     string
 }
 
 func NewServer(configPath string, cookiePath string, updater ConfigUpdater, port int) *Server {
 	s := &Server{
-		configPath:   configPath,
-		cookiePath:   cookiePath,
+		configPath:    configPath,
+		cookiePath:    cookiePath,
 		configUpdater: updater,
-		staticDir:    "./front/dist",
+		staticDir:     "./front/dist",
 	}
 
 	mux := http.NewServeMux()
@@ -85,14 +85,14 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    // 标准化配置（城市/学历/经验等转换为编码；填充默认值）
-    if err := config.Normalize(&newCfg); err != nil {
-        http.Error(w, "Failed to normalize config: "+err.Error(), http.StatusBadRequest)
-        return
-    }
+	// 标准化配置（城市/学历/经验等转换为编码；填充默认值）
+	if err := config.Normalize(&newCfg); err != nil {
+		http.Error(w, "Failed to normalize config: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 
-    // Update the config through updater（内存保持与写盘一致的标准化结果）
-    s.configUpdater.UpdateConfig(&newCfg)
+	// Update the config through updater（内存保持与写盘一致的标准化结果）
+	s.configUpdater.UpdateConfig(&newCfg)
 
 	// Save to file
 	data, err := os.ReadFile(s.configPath)
@@ -109,7 +109,7 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update the YAML data with new values
-    // Convert config.Root to map for merging（使用YAML标签保持键名一致）
+	// Convert config.Root to map for merging（使用YAML标签保持键名一致）
 	newData, err := yaml.Marshal(&newCfg)
 	if err != nil {
 		http.Error(w, "Failed to marshal new config: "+err.Error(), http.StatusInternalServerError)

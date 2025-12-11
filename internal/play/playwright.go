@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/playwright-community/playwright-go"
@@ -21,17 +22,80 @@ type Runner struct {
 
 // NewRunner creates a chromium runner configured like the Java PlaywrightUtil.
 // It also enables stealth evasion scripts.
+// NewRunner 创建浏览器运行器。
+// 优先从环境变量读取 Browserless 远程端点并进行连接；
+// 环境变量：
+//   - BROWSERLESS_URL: 形如 ws://browserless:3000 或 ws://browserless:3000/chromium/playwright
+//   - BROWSERLESS_MODE: "playwright"（优先使用 pw.Chromium.Connect）或 "cdp"（使用 ConnectOverCDP）。默认 playwright；
+//   - PW_SLOWMO_MS: 数值，整体放慢操作节奏（默认 50）。
+//
+// 若未提供 BROWSERLESS_URL，则回退为本地启动（原有行为不变）。
 func NewRunner(headless bool) (*Runner, error) {
 	ensurePlaywrightCache()
 
+	// 启动 Playwright driver（仅几 MB；不下载浏览器）
 	pw, err := playwright.Run()
 	if err != nil {
 		return nil, fmt.Errorf("start playwright: %w", err)
 	}
 
+	slowMo := float64(50)
+	if v := os.Getenv("PW_SLOWMO_MS"); v != "" {
+		if n, err := parseFloat(v); err == nil && n >= 0 {
+			slowMo = n
+		}
+	}
+
+	// 读取远程端点
+	if ws := strings.TrimSpace(os.Getenv("BROWSERLESS_URL")); ws != "" {
+		mode := strings.ToLower(strings.TrimSpace(os.Getenv("BROWSERLESS_MODE")))
+		if mode == "" {
+			mode = "playwright"
+		}
+
+		var browser playwright.Browser
+		// 优先按用户要求使用 Connect（原生 Playwright 协议），失败时自动回退到 CDP；均带重试
+		if mode == "playwright" {
+			browser, err = connectPlaywrightWSWithRetry(pw, ws, slowMo, 10, 2*time.Second)
+			if err != nil {
+				log.Printf("[playwright] Connect 失败(%v)，尝试 ConnectOverCDP… | ws=%s", err, ws)
+			}
+		}
+		if browser == nil {
+			// CDP 方式对版本不敏感，兼容性更强
+			browser, err = connectCDPWithRetry(pw, ws, slowMo, 10, 2*time.Second)
+		}
+		if err != nil {
+			// 连接远程失败则清理并返回
+			_ = pw.Stop()
+			return nil, fmt.Errorf("connect remote browser(%s) failed: %w", mode, err)
+		}
+
+		context, err := browser.NewContext(playwright.BrowserNewContextOptions{
+			Viewport:  &playwright.Size{Width: 1920, Height: 1080},
+			UserAgent: playwright.String("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"),
+			Locale:    playwright.String("zh-CN"),
+		})
+		if err != nil {
+			_ = browser.Close()
+			_ = pw.Stop()
+			return nil, fmt.Errorf("create context: %w", err)
+		}
+		page, err := context.NewPage()
+		if err != nil {
+			_ = context.Close()
+			_ = browser.Close()
+			_ = pw.Stop()
+			return nil, fmt.Errorf("create page: %w", err)
+		}
+		page.SetDefaultTimeout(30 * 1000)
+		return &Runner{pw: pw, browser: browser, context: context, page: page}, nil
+	}
+
+	// 未配置远程端点：回退到本地启动（开发模式）
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(headless),
-		SlowMo:   playwright.Float(50),
+		SlowMo:   playwright.Float(slowMo),
 		Args: []string{
 			"--disable-blink-features=AutomationControlled",
 			"--disable-features=IsolateOrigins,site-per-process",
@@ -41,6 +105,7 @@ func NewRunner(headless bool) (*Runner, error) {
 		},
 	})
 	if err != nil {
+		_ = pw.Stop()
 		return nil, fmt.Errorf("launch browser: %w", err)
 	}
 
@@ -50,11 +115,16 @@ func NewRunner(headless bool) (*Runner, error) {
 		Locale:    playwright.String("zh-CN"),
 	})
 	if err != nil {
+		_ = browser.Close()
+		_ = pw.Stop()
 		return nil, fmt.Errorf("create context: %w", err)
 	}
 
 	page, err := context.NewPage()
 	if err != nil {
+		_ = context.Close()
+		_ = browser.Close()
+		_ = pw.Stop()
 		return nil, fmt.Errorf("create page: %w", err)
 	}
 	page.SetDefaultTimeout(30 * 1000)
@@ -223,4 +293,43 @@ func ensurePlaywrightCache() {
 			return
 		}
 	}
+}
+
+// parseFloat 将字符串解析为 float64；失败返回错误
+func parseFloat(s string) (float64, error) {
+	var f float64
+	_, err := fmt.Sscanf(strings.TrimSpace(s), "%f", &f)
+	return f, err
+}
+
+// connectPlaywrightWSWithRetry 使用 Playwright 原生协议连接，带重试
+func connectPlaywrightWSWithRetry(pw *playwright.Playwright, ws string, slowMo float64, attempts int, backoff time.Duration) (playwright.Browser, error) {
+	var last error
+	for i := 0; i < attempts; i++ {
+		b, err := pw.Chromium.Connect(ws, playwright.BrowserTypeConnectOptions{SlowMo: playwright.Float(slowMo)})
+		if err == nil {
+			return b, nil
+		}
+		last = err
+		sleep := backoff * time.Duration(i+1)
+		log.Printf("[playwright] Connect 失败(%v)，%v 后重试(%d/%d)…", err, sleep, i+1, attempts)
+		time.Sleep(sleep)
+	}
+	return nil, last
+}
+
+// connectCDPWithRetry 使用 CDP 协议连接，带重试
+func connectCDPWithRetry(pw *playwright.Playwright, ws string, slowMo float64, attempts int, backoff time.Duration) (playwright.Browser, error) {
+	var last error
+	for i := 0; i < attempts; i++ {
+		b, err := pw.Chromium.ConnectOverCDP(ws, playwright.BrowserTypeConnectOverCDPOptions{SlowMo: playwright.Float(slowMo)})
+		if err == nil {
+			return b, nil
+		}
+		last = err
+		sleep := backoff * time.Duration(i+1)
+		log.Printf("[playwright] ConnectOverCDP 失败(%v)，%v 后重试(%d/%d)…", err, sleep, i+1, attempts)
+		time.Sleep(sleep)
+	}
+	return nil, last
 }
